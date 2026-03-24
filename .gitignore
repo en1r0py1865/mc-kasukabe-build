@@ -1,0 +1,24 @@
+# Worktrees
+.worktrees/
+
+# Runtime workspace
+workspace/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Env
+.env
+.env.local
+
+# macOS
+.DS_Store
