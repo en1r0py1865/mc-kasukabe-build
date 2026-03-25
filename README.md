@@ -1,68 +1,89 @@
 # kasukabe — Minecraft AI Building Studio
 
-AI-powered Minecraft building automation. Input an image or video of a structure and kasukabe will:
+AI-powered Minecraft building automation. Give it an image or video of a structure,
+and kasukabe will analyze, plan, build, and self-correct — all inside Claude Code.
 
-1. **Analyze** the visual input (Claude vision API)
-2. **Plan** the build as WorldEdit + vanilla commands
-3. **Execute** commands via RCON and Mineflayer bridge
-4. **Inspect** the result and self-iterate until complete (up to 3 rounds)
+**No API key management needed.** Runs on [Claude Code](https://claude.ai/claude-code) — authentication is handled by your Claude Code session.
 
-## Architecture
+## The Pipeline
+
+    /kasukabe-build house.jpg at 100,64,200 size 12x8x10
 
 ```
 Input (image/video)
     ↓
-[Architect]  — Claude API vision → blueprint.json
+[Architect]   — vision analysis → blueprint.json
     ↓
-[Planner]    — tool-use loop → commands.txt (VANILLA + WORLDEDIT sections)
+[Planner]     — command strategy → commands.txt
     ↓
-[Builder]    — Python: RCON (vanilla) + Mineflayer bridge (WorldEdit)
+[Builder]     — RCON + bridge → blocks placed in world
     ↓
-[Inspector]  — bridge batch query + RCON spot-check + LLM diagnosis → diff_report.json
+[Inspector]   — block verification + LLM diagnosis → diff_report.json
     ↓
-[Foreman]    — iterates up to 3× until completion_rate ≥ 85%
+[Foreman]     — iterates up to 3× until completion_rate ≥ 85%
 ```
+
+## Skills
+
+| Skill | Role | What it does |
+|-------|------|-------------|
+| `/kasukabe-build` | **Foreman** | The full pipeline. Parses your input, creates a workspace, spawns each agent as a subagent in sequence. Iterates Planner → Builder → Inspector up to 3 times until the build hits 85% completion. One command, entire build. |
+| `/kasukabe-extract-frames` | **Video Processor** | Standalone keyframe extraction. Scene-change detection with time-based fallback, outputs up to 8 JPEG frames at 1280×720. Use independently or let `/kasukabe-build` call it automatically for video input. |
+
+### Internal agents (spawned automatically by `/kasukabe-build`)
+
+| Agent | Role | Input → Output |
+|-------|------|---------------|
+| **Architect** | Vision Analyst | Images → `blueprint.json` (block-level build plan with materials, layers, coordinates) |
+| **Planner** | Command Strategist | `blueprint.json` → `commands.txt` (WorldEdit bulk fills + vanilla setblock, absolute coords) |
+| **Builder** | Executor | `commands.txt` → blocks in world (RCON for vanilla, Mineflayer bridge for WorldEdit) |
+| **Inspector** | QA Engineer | World state vs blueprint → `diff_report.json` (completion rate, diagnosis, fix commands) |
 
 ## Requirements
 
+- [Claude Code](https://claude.ai/claude-code) CLI (authenticated)
 - Python 3.11+
-- Minecraft Paper server with FAWE plugin
-- Mineflayer bridge running (`bridge-server.js`)
-- ffmpeg (for video input)
-- `ANTHROPIC_API_KEY` environment variable
+- Node.js (for Mineflayer bridge)
+- Minecraft Paper server with [FAWE](https://github.com/IntellectualSites/FastAsyncWorldEdit) plugin
+- [Mineflayer bridge](https://github.com/PrismarineJS/mineflayer) running (`bridge-server.js`)
+- ffmpeg (for video input): `brew install ffmpeg`
 
 ## Installation
 
 ```bash
+# Install Python dependencies
 pip install -e .
+
+# Install Claude Code skills
+bash setup.sh
 ```
 
-Or with uv:
-
-```bash
-uv pip install -e .
-```
+`setup.sh` renders skill templates and symlinks `/kasukabe-build` and `/kasukabe-extract-frames` into `~/.claude/skills/`.
 
 ## Configuration
 
-Copy `.env.example` to `.env` and fill in your values:
-
 ```bash
 cp .env.example .env
-# Edit .env with your ANTHROPIC_API_KEY and server settings
 ```
+
+Edit `.env` with your server settings. Default values work for local development:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `KASUKABE_BRIDGE_URL` | `http://localhost:3001` | Mineflayer bridge URL |
+| `CRAFTSMEN_RCON_HOST` | `127.0.0.1` | RCON host |
+| `CRAFTSMEN_RCON_PORT` | `25575` | RCON port |
+| `CRAFTSMEN_RCON_PASSWORD` | `minecraft123` | RCON password (change for non-local servers) |
 
 ## Usage
 
-```bash
-# Build from an image
-kasukabe build --input house.jpg --origin 100,64,200 --size 12x8x10
+In Claude Code:
 
-# Build from a video (size auto-detected)
-kasukabe build --input timelapse.mp4 --origin 100,64,200
-
-# Custom workspace directory
-kasukabe build --input cabin.png --workspace /tmp/kasukabe-sessions
+```
+/kasukabe-build house.jpg at 100,64,200 size 12x8x10
+/kasukabe-build timelapse.mp4 at 100,64,200
+/kasukabe-build cabin.png
+/kasukabe-extract-frames walkthrough.mp4
 ```
 
 ## Server Setup
@@ -70,41 +91,52 @@ kasukabe build --input cabin.png --workspace /tmp/kasukabe-sessions
 ### 1. Start Paper server with FAWE
 
 ```bash
-cd /Users/elon/minecraft-paper && ./start.sh
+cd ~/minecraft-paper && ./start.sh
 ```
 
 ### 2. Start Mineflayer bridge
 
 ```bash
-node /path/to/minecraft-skill/minecraft-bridge/bridge-server.js
+node bridge-server.js
 ```
 
-The bridge-server.js has been extended with two new endpoints:
+The bridge needs two custom endpoints:
 - `GET /block/:x/:y/:z` — query block at coordinates
 - `POST /blocks` — batch query up to 200 positions
 
+See `bridge-extension/block_routes.js` for the implementation to inject into your bridge server.
+
 ### 3. Op the bridge bot
 
-Via RCON or in-game console:
 ```
 op ClawBot
 ```
 
-## Agent Roles
-
-See `kasukabe/skills/*/SKILL.md` for detailed workflow documentation for each agent role.
-
 ## Workspace Structure
 
-Each build session creates a workspace directory:
+Each build session creates:
 
 ```
 workspace/{session_id}/
 ├── input_meta.json       # session metadata
-├── frames/               # extracted video frames (if video input)
+├── frames/               # extracted video frames (if video)
 ├── blueprint.json        # Architect output
 ├── commands.txt          # Planner output
 ├── build_log.json        # Builder execution log
 ├── diff_report.json      # Inspector verification report
 └── foreman_summary.json  # final summary
 ```
+
+## Development
+
+```bash
+# Run tests
+PYTHONPATH=. pytest tests/ -v
+
+# Regenerate skill templates after editing .tmpl files
+PYTHONPATH=. python3 scripts/gen_skills.py
+```
+
+## License
+
+MIT
