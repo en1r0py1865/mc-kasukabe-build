@@ -4,16 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kasukabe"
-version = "0.1.0"
+version = "0.2.0"
 description = "Minecraft AI Building Studio — build from image or video"
 requires-python = ">=3.11"
 dependencies = [
-    "anthropic>=0.40",
     "requests>=2.31",
 ]
-
-[project.scripts]
-kasukabe = "kasukabe.__main__:main"
 
 [project.optional-dependencies]
 dev = [

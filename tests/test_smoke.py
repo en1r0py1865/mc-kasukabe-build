@@ -2,40 +2,19 @@
 from __future__ import annotations
 
 import json
-import re
-import tempfile
+import subprocess
+import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 
 from kasukabe.agents.builder import _CHANGED_RE, _ERROR_PATTERNS, _VANILLA_HEADER, _WORLDEDIT_HEADER
 from kasukabe.agents.builder import Builder
 from kasukabe.bridge_client import BridgeClient
-from kasukabe.models import BlockOp, PipelineBlocked, SessionState
-from kasukabe.video_processor import VideoProcessingError
+from kasukabe.models import BlockOp
 
 
 # ── Model tests ───────────────────────────────────────────────────────────────
-
-class TestSessionState:
-    def test_defaults(self):
-        s = SessionState(
-            session_id="abc123",
-            input_path="test.jpg",
-            origin=(100, 64, 200),
-            size=(10, 8, 10),
-        )
-        assert s.iteration == 0
-        assert s.phase == "INIT"
-        assert s.completion_rate == 0.0
-        assert s.failure_reason == ""
-
-    def test_phase_transitions(self):
-        s = SessionState("x", "y", (0, 0, 0), (0, 0, 0))
-        s.phase = "ARCHITECT"
-        assert s.phase == "ARCHITECT"
-
 
 class TestBlockOp:
     def test_creation(self):
@@ -125,74 +104,31 @@ class TestBridgeClient:
 
     def test_get_block_url(self):
         c = BridgeClient("http://localhost:3001")
-        # Verify the URL would be constructed correctly
         expected = "http://localhost:3001/block/100/64/200"
         assert f"{c.base_url}/block/100/64/200" == expected
 
     def test_is_connected_false_on_connection_error(self):
-        c = BridgeClient("http://localhost:19999")  # nothing listening here
+        c = BridgeClient("http://localhost:19999")
         assert c.is_connected() is False
 
 
-# ── Foreman helpers ────────────────────────────────────────────────────────────
+# ── CLI entry tests ───────────────────────────────────────────────────────────
 
-class TestForemanHelpers:
-    def test_is_video(self, tmp_path):
-        from kasukabe.foreman import Foreman
-        f = Foreman(workspace_root=tmp_path)
-        assert f._is_video("clip.mp4") is True
-        assert f._is_video("clip.MOV") is True
-        assert f._is_video("photo.jpg") is False
-        assert f._is_video("photo.PNG") is False
-
-    def test_read_completion_rate_missing_file(self, tmp_path):
-        from kasukabe.foreman import Foreman
-        from kasukabe.models import SessionState
-        f = Foreman(workspace_root=tmp_path)
-        s = SessionState("x", "y", (0, 0, 0), (0, 0, 0), workspace_dir=tmp_path)
-        assert f._read_completion_rate(s) == 0.0
-
-    def test_read_completion_rate_from_file(self, tmp_path):
-        from kasukabe.foreman import Foreman
-        from kasukabe.models import SessionState
-        (tmp_path / "diff_report.json").write_text(json.dumps({"completion_rate": 0.92}))
-        f = Foreman(workspace_root=tmp_path)
-        s = SessionState("x", "y", (0, 0, 0), (0, 0, 0), workspace_dir=tmp_path)
-        assert f._read_completion_rate(s) == 0.92
+class TestBuilderCLI:
+    def test_help_exits_zero(self):
+        result = subprocess.run(
+            [sys.executable, "-m", "kasukabe.agents.builder", "--help"],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0
+        assert "--workspace" in result.stdout
 
 
-# ── Architect JSON parsing ────────────────────────────────────────────────────
-
-class TestArchitectJsonParsing:
-    def test_parse_clean_json(self):
-        from kasukabe.agents.architect import Architect
-        a = Architect.__new__(Architect)
-        result = a._parse_json('{"meta": {}, "materials": [], "layers": [], "blocks": []}')
-        assert result is not None
-        assert "meta" in result
-
-    def test_parse_fenced_json(self):
-        from kasukabe.agents.architect import Architect
-        a = Architect.__new__(Architect)
-        fenced = '```json\n{"meta": {}, "materials": [], "layers": [], "blocks": []}\n```'
-        result = a._parse_json(fenced)
-        assert result is not None
-
-    def test_parse_invalid_returns_none(self):
-        from kasukabe.agents.architect import Architect
-        a = Architect.__new__(Architect)
-        assert a._parse_json("not json at all") is None
-
-    def test_is_valid_blueprint_missing_key(self):
-        from kasukabe.agents.architect import Architect
-        a = Architect.__new__(Architect)
-        assert not a._is_valid_blueprint({"meta": {}, "materials": []})  # missing layers, blocks
-
-    def test_is_valid_blueprint_ok(self):
-        from kasukabe.agents.architect import Architect
-        a = Architect.__new__(Architect)
-        bp = {
-            "meta": {}, "materials": [{"block": "minecraft:stone"}],
-            "layers": [], "blocks": []
-        }
-        assert a._is_valid_blueprint(bp)
+class TestVideoProcessorCLI:
+    def test_help_exits_zero(self):
+        result = subprocess.run(
+            [sys.executable, "-m", "kasukabe.video_processor", "--help"],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0
+        assert "--input" in result.stdout

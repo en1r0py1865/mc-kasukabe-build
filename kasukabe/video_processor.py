@@ -130,3 +130,24 @@ def extract_keyframes(
         raise VideoProcessingError("ffmpeg produced no frames — check video file")
 
     return frames[:max_frames]
+
+
+def main() -> None:
+    import argparse
+    parser = argparse.ArgumentParser(
+        prog="kasukabe.video_processor",
+        description="Extract keyframes from video for Minecraft building analysis.",
+    )
+    parser.add_argument("--input", "-i", required=True, help="Path to video file")
+    parser.add_argument("--output-dir", "-o", required=True, help="Output directory for frames")
+    parser.add_argument("--max-frames", type=int, default=8, help="Maximum frames to extract")
+
+    args = parser.parse_args()
+    frames = extract_keyframes(args.input, Path(args.output_dir), max_frames=args.max_frames)
+    for f in frames:
+        print(f)
+    print(f"Extracted {len(frames)} frames.")
+
+
+if __name__ == "__main__":
+    main()

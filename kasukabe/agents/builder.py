@@ -3,12 +3,12 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 import time
 from pathlib import Path
 
 import requests
 
-from kasukabe.models import PipelineBlocked, SessionState
 from kasukabe.rcon_client import RconClient
 
 # ── Constants ─────────────────────────────────────────────────────────────────
@@ -63,59 +63,6 @@ class Builder:
         self._rcon_port = rcon_port
         self._rcon_password = rcon_password
         self._rcon: RconClient | None = None
-
-    # ── Public interface ───────────────────────────────────────────────────────
-
-    def execute(self, session: SessionState) -> dict:
-        """Read commands.txt and execute all commands.
-
-        Returns:
-            build_log dict (also written to workspace_dir/build_log.json).
-
-        Raises:
-            PipelineBlocked: If bridge is disconnected or commands.txt is missing.
-        """
-        self._preflight(session)
-        commands = self._parse_commands(session.workspace_dir / "commands.txt")
-
-        ox, oy, oz = session.origin
-        wx, _, wz = session.size
-        self._forceload(ox, oz, ox + wx, oz + wz, "add")
-
-        try:
-            log = self._run_commands(commands)
-        finally:
-            self._forceload(ox, oz, ox + wx, oz + wz, "remove")
-            self._close_rcon()
-
-        log["session_id"] = session.session_id
-        self._write_log(session, log)
-        return log
-
-    # ── Preflight ─────────────────────────────────────────────────────────────
-
-    def _preflight(self, session: SessionState) -> None:
-        """Check bridge connectivity and commands.txt existence."""
-        if not (session.workspace_dir / "commands.txt").exists():
-            raise PipelineBlocked("Builder: commands.txt not found — run Planner first")
-
-        try:
-            r = requests.get(f"{self.bridge_url}/status", timeout=5)
-            r.raise_for_status()
-            status = r.json()
-            if not status.get("connected"):
-                raise PipelineBlocked(
-                    "Builder: Mineflayer bot is not connected. "
-                    "Start bridge-server.js and connect the bot."
-                )
-        except requests.RequestException as exc:
-            raise PipelineBlocked(
-                f"Builder: Cannot reach Mineflayer bridge at {self.bridge_url}. "
-                f"Start bridge-server.js. Error: {exc}"
-            ) from exc
-
-        # Connect RCON eagerly
-        self._rcon = RconClient(self._rcon_host, self._rcon_port, self._rcon_password)
 
     # ── Command parsing ────────────────────────────────────────────────────────
 
@@ -226,14 +173,111 @@ class Builder:
         except Exception:  # noqa: BLE001
             pass  # forceload failures are non-fatal
 
-    # ── Output ────────────────────────────────────────────────────────────────
 
-    def _write_log(self, session: SessionState, log: dict) -> None:
-        """Write build_log.json and builder_done.json to workspace."""
-        (session.workspace_dir / "build_log.json").write_text(
-            json.dumps(log, indent=2), encoding="utf-8"
-        )
-        (session.workspace_dir / "builder_done.json").write_text(
-            json.dumps({"status": "DONE", "commands_ok": log["commands_ok"]}),
-            encoding="utf-8",
-        )
+
+# ── CLI entry ─────────────────────────────────────────────────────────────────
+
+def _parse_origin(value: str) -> tuple[int, int, int]:
+    parts = value.split(",")
+    if len(parts) != 3:
+        raise ValueError(f"origin must be x,y,z — got: {value!r}")
+    return (int(parts[0].strip()), int(parts[1].strip()), int(parts[2].strip()))
+
+
+def _parse_size(value: str) -> tuple[int, int, int]:
+    parts = value.lower().replace("x", ",").split(",")
+    if len(parts) != 3:
+        raise ValueError(f"size must be WxHxL — got: {value!r}")
+    return (int(parts[0].strip()), int(parts[1].strip()), int(parts[2].strip()))
+
+
+def run_from_cli(
+    workspace_dir: Path,
+    origin: tuple[int, int, int],
+    size: tuple[int, int, int],
+    bridge_url: str = BRIDGE_URL,
+    rcon_host: str = RCON_HOST,
+    rcon_port: int = RCON_PORT,
+    rcon_password: str = RCON_PASSWORD,
+) -> dict:
+    """Run builder from CLI arguments (no SessionState dependency)."""
+    builder = Builder(
+        bridge_url=bridge_url,
+        rcon_host=rcon_host,
+        rcon_port=rcon_port,
+        rcon_password=rcon_password,
+    )
+
+    # Preflight — check commands.txt and bridge
+    commands_path = workspace_dir / "commands.txt"
+    if not commands_path.exists():
+        print("Error: commands.txt not found", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        r = requests.get(f"{bridge_url.rstrip('/')}/status", timeout=5)
+        r.raise_for_status()
+        if not r.json().get("connected"):
+            print("Error: Mineflayer bot not connected", file=sys.stderr)
+            sys.exit(1)
+    except requests.RequestException as exc:
+        print(f"Error: Cannot reach bridge at {bridge_url}: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    # Connect RCON
+    builder._rcon = RconClient(rcon_host, rcon_port, rcon_password)
+
+    # Parse and execute
+    commands = builder._parse_commands(commands_path)
+    ox, oy, oz = origin
+    wx, _, wz = size
+    builder._forceload(ox, oz, ox + wx, oz + wz, "add")
+
+    try:
+        log = builder._run_commands(commands)
+    finally:
+        builder._forceload(ox, oz, ox + wx, oz + wz, "remove")
+        builder._close_rcon()
+
+    # Write output
+    log["session_id"] = workspace_dir.name
+    (workspace_dir / "build_log.json").write_text(json.dumps(log, indent=2), encoding="utf-8")
+    (workspace_dir / "builder_done.json").write_text(
+        json.dumps({"status": "DONE", "commands_ok": log["commands_ok"]}), encoding="utf-8"
+    )
+    return log
+
+
+def main() -> None:
+    import argparse
+    parser = argparse.ArgumentParser(
+        prog="kasukabe.builder",
+        description="Execute Minecraft build commands from commands.txt.",
+    )
+    parser.add_argument("--workspace", required=True, help="Path to workspace directory")
+    parser.add_argument("--origin", required=True, help="Build origin x,y,z")
+    parser.add_argument("--size", required=True, help="Build size WxHxL")
+    parser.add_argument("--bridge-url", default=BRIDGE_URL)
+    parser.add_argument("--rcon-host", default=RCON_HOST)
+    parser.add_argument("--rcon-port", type=int, default=RCON_PORT)
+    parser.add_argument("--rcon-password", default=RCON_PASSWORD)
+
+    args = parser.parse_args()
+    origin = _parse_origin(args.origin)
+    size = _parse_size(args.size)
+
+    log = run_from_cli(
+        workspace_dir=Path(args.workspace),
+        origin=origin,
+        size=size,
+        bridge_url=args.bridge_url,
+        rcon_host=args.rcon_host,
+        rcon_port=args.rcon_port,
+        rcon_password=args.rcon_password,
+    )
+
+    print(f"Build done: {log['commands_ok']} ok, {log['commands_failed']} failed")
+
+
+if __name__ == "__main__":
+    main()
