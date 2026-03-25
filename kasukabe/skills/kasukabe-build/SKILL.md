@@ -38,6 +38,24 @@ Extract from the user's message:
 - `origin`: x,y,z coordinates (default: 100,64,200)
 - `size`: WxHxL blocks (default: 0x0x0 = auto-detect)
 
+### Step 0.5: Preflight Check
+
+Before creating the workspace, verify the bridge is reachable:
+
+```bash
+curl -s --connect-timeout 3 http://localhost:3001/status
+```
+
+If the bridge is not reachable or returns an error, **stop immediately** and tell the user:
+
+> Bridge server is not running. Start it first:
+> ```
+> cd bridge && npm install && node server.js
+> ```
+> Then re-run this command.
+
+Do NOT proceed to Step 1 if the bridge is down.
+
 ### Step 1: Create Workspace
 
 ```bash

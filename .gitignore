@@ -16,6 +16,9 @@ build/
 .pytest_cache/
 .ruff_cache/
 
+# Node.js
+node_modules/
+
 # Env
 .env
 .env.local

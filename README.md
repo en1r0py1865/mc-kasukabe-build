@@ -43,9 +43,8 @@ Input (image/video)
 
 - [Claude Code](https://claude.ai/claude-code) CLI (authenticated)
 - Python 3.11+
-- Node.js (for Mineflayer bridge)
+- Node.js 18+ (for Mineflayer bridge in `bridge/`)
 - Minecraft Paper server with [FAWE](https://github.com/IntellectualSites/FastAsyncWorldEdit) plugin
-- [Mineflayer bridge](https://github.com/PrismarineJS/mineflayer) running (`bridge-server.js`)
 - ffmpeg (for video input): `brew install ffmpeg`
 
 ## Installation
@@ -97,14 +96,10 @@ cd ~/minecraft-paper && ./start.sh
 ### 2. Start Mineflayer bridge
 
 ```bash
-node bridge-server.js
+cd bridge && npm install && node server.js
 ```
 
-The bridge needs two custom endpoints:
-- `GET /block/:x/:y/:z` — query block at coordinates
-- `POST /blocks` — batch query up to 200 positions
-
-See `bridge-extension/block_routes.js` for the implementation to inject into your bridge server.
+The bridge connects a Mineflayer bot to the Minecraft server and exposes an HTTP API on port 3001. It handles WorldEdit command execution and block state queries for the Inspector.
 
 ### 3. Op the bridge bot
 

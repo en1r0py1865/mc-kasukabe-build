@@ -1,0 +1,15 @@
+{
+  "name": "kasukabe-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Mineflayer bridge server for kasukabe build pipeline",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "mineflayer": "^4.23.0",
+    "mineflayer-pathfinder": "^2.4.0",
+    "vec3": "^0.1.10"
+  }
+}
