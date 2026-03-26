@@ -99,13 +99,36 @@ cd ~/minecraft-paper && ./start.sh
 cd bridge && npm install && node server.js
 ```
 
+> **Note:** Start the Minecraft server before launching the bridge. The bridge will retry the connection on failure, but it cannot proceed until the server is ready.
+
+The `MC_VERSION` must match your Minecraft server version. If the bridge fails with a version mismatch error, set it explicitly:
+
+```bash
+MC_VERSION=1.21.11 node server.js
+```
+
+All available environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MC_HOST` | `localhost` | Minecraft server host |
+| `MC_PORT` | `25565` | Minecraft game port |
+| `MC_VERSION` | `1.21.1` | Minecraft server version (must match your server) |
+| `MC_BOT_USERNAME` | `ClawBot` | Bot username |
+| `MC_BRIDGE_PORT` | `3001` | Bridge HTTP API port |
+| `MC_AUTH` | `offline` | Auth mode: `offline` or `microsoft` |
+
 The bridge connects a Mineflayer bot to the Minecraft server and exposes an HTTP API on port 3001. It handles WorldEdit command execution and block state queries for the Inspector.
 
-### 3. Op the bridge bot
+### 3. Grant operator privileges to the bot
+
+Run the following command in the Minecraft server console (or in-game as an existing operator):
 
 ```
 op ClawBot
 ```
+
+The bot requires operator privileges to execute `fill`, `setblock`, and WorldEdit commands. If you changed `MC_BOT_USERNAME`, replace `ClawBot` with the username you configured.
 
 ## Workspace Structure
 
