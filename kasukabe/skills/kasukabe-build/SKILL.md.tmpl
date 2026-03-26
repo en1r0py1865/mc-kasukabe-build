@@ -21,12 +21,7 @@ Examples:
 - `/kasukabe-build timelapse.mp4 at 100,64,200`
 - `/kasukabe-build cabin.png` (origin defaults to 100,64,200, size auto-detected)
 
-## Model Configuration
-
-Edit these defaults to change which models subagents use:
-- **architect**: opus (vision analysis benefits from stronger model)
-- **planner**: sonnet
-- **inspector**: sonnet
+{{model_configuration}}
 
 ## Pipeline
 
@@ -78,9 +73,7 @@ Write `workspace/$SESSION_ID/input_meta.json`:
 
 ### Step 2: Video Processing (if input is video)
 
-If the input file ends with .mp4/.mov/.avi/.mkv/.webm, spawn a subagent:
-
-**Agent prompt**: Run video frame extraction:
+If the input file ends with .mp4/.mov/.avi/.mkv/.webm, run video frame extraction:
 ```bash
 python -m kasukabe.video_processor --input <input_path> --output-dir workspace/<SESSION_ID>/frames
 ```
@@ -88,23 +81,7 @@ Report how many frames were extracted.
 
 ### Step 3: Architect (once)
 
-Read the Architect skill template:
-```
-kasukabe/skills/architect/SKILL.md
-```
-
-Spawn an **Architect subagent** (model: see Model Configuration above) with this prompt:
-
-> [Contents of architect/SKILL.md]
->
-> **Workspace**: workspace/<SESSION_ID>
-> **Origin**: x,y,z
-> **Size**: WxHxL (0x0x0 = auto-detect)
-> **Image files**: [list the frame files or input image path]
->
-> Read each image file, analyze the structure, and write blueprint.json and architect_done.json.
-
-After the subagent returns, Read `workspace/<SESSION_ID>/architect_done.json`. If status is BLOCKED, stop and report the reason.
+{{spawn_architect}}
 
 ### Step 4: Iteration Loop (max 3)
 
@@ -112,22 +89,7 @@ For iteration = 1, 2, 3:
 
 #### 4a: Planner
 
-Read `kasukabe/skills/planner/SKILL.md`.
-
-If iteration > 1, also Read `workspace/<SESSION_ID>/diff_report.json` and extract `fix_commands`.
-
-Spawn a **Planner subagent** (model: see config) with prompt:
-
-> [Contents of planner/SKILL.md]
->
-> **Workspace**: workspace/<SESSION_ID>
-> **Origin**: x,y,z
-> **Size**: WxHxL
-> [If iteration > 1]: **Fix commands from previous inspection**: [fix_commands list]
->
-> Read blueprint.json, plan the construction, write commands.txt and planner_done.json.
-
-Check `planner_done.json` — if BLOCKED, stop.
+{{spawn_planner}}
 
 #### 4.pre: Teleport Player (iteration 1 only)
 
@@ -147,33 +109,11 @@ If `player_name` is not set and this is iteration 1, print:
 
 #### 4b: Builder
 
-Read `kasukabe/skills/builder/SKILL.md`.
-
-Spawn a **Builder subagent** with prompt:
-
-> [Contents of builder/SKILL.md]
->
-> **Workspace**: workspace/<SESSION_ID>
-> **Origin**: x,y,z
-> **Size**: WxHxL
-
-Check `builder_done.json` — if BLOCKED, stop.
+{{spawn_builder}}
 
 #### 4c: Inspector
 
-Read `kasukabe/skills/inspector/SKILL.md`.
-
-Spawn an **Inspector subagent** (model: see config) with prompt:
-
-> [Contents of inspector/SKILL.md]
->
-> **Workspace**: workspace/<SESSION_ID>
-> **Origin**: x,y,z
-
-After return, Read `workspace/<SESSION_ID>/diff_report.json`:
-- If `completion_rate >= 0.85`: break loop, proceed to summary.
-- If `should_continue == false`: break loop.
-- Otherwise: continue to next iteration.
+{{spawn_inspector}}
 
 ### Step 5: Summary
 

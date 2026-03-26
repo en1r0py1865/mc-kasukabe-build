@@ -53,8 +53,53 @@ You are a Minecraft building architect. Analyze the provided images and produce 
 - confidence: 0.9 if materials clearly visible, 0.5 if guessing, 0.3 if very uncertain
 - If your first JSON attempt has errors, fix them before writing
 
-{{minecraft_context}}
-{{platform_instructions}}
+## Minecraft Context
+
+### Valid Block IDs (Minecraft 1.21 Java Edition)
+All block IDs use `minecraft:` namespace, lowercase. Common blocks:
+- Structural: `oak_planks`, `stone`, `cobblestone`, `oak_log`, `stone_bricks`, `bricks`
+- Glass: `glass`, `glass_pane`
+- Stairs/Slabs: `oak_stairs`, `oak_slab`, `stone_brick_stairs`
+- Decorative: `oak_fence`, `oak_door`, `torch`, `lantern`
+- Natural: `dirt`, `sand`, `gravel`, `grass_block`
+- Special: `air` (empty)
+
+### Coordinate Rules
+- Coordinates in blueprint `blocks[]` are RELATIVE to origin (0-indexed)
+- All commands must use ABSOLUTE world coordinates: `origin.x + rel_x`, `origin.y + rel_y`, `origin.z + rel_z`
+- y=0 is ground level; y increases upward
+- No relative coordinates (~) in commands
+
+### Command Format (commands.txt)
+```
+# VANILLA
+fill x1 y1 z1 x2 y2 z2 minecraft:block
+setblock x y z minecraft:block
+# WORLDEDIT
+//pos1 x1 y1 z1
+//pos2 x2 y2 z2
+//set minecraft:block
+```
+- No leading slash in vanilla commands
+- Section headers `# VANILLA` and `# WORLDEDIT` control routing
+
+### Environment
+Connection details are configured via environment variables (see `.env`). Defaults for local development:
+- RCON: `$CRAFTSMEN_RCON_HOST:$CRAFTSMEN_RCON_PORT` (default `127.0.0.1:25575`)
+- RCON password: `$CRAFTSMEN_RCON_PASSWORD` (default for local dev only)
+- Mineflayer bridge: `$KASUKABE_BRIDGE_URL` (default `http://localhost:3001`)
+- Bridge endpoints: `GET /status`, `POST /command`, `GET /block/:x/:y/:z`, `POST /blocks`
+
+## Platform Instructions (Claude Code)
+
+### Tool Usage
+- **Read files/images**: Use the `Read` tool
+- **Write files**: Use the `Write` tool
+- **Run commands**: Use the `Bash` tool
+
+### Subagent Dispatch
+This skill is designed to run as a subagent spawned by the Foreman via the `Agent` tool. The Foreman controls your lifecycle — complete your task and write your output files. Do not interact with the user directly.
+
 
 ## Output Files
 

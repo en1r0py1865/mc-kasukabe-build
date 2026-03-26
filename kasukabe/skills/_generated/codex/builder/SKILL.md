@@ -1,3 +1,34 @@
+---
+name: kasukabe-builder
+description: >
+  Build executor subagent. Runs Python builder module via Bash to execute commands.
+metadata:
+  kasukabe:
+    role: builder
+    inputs: [commands.txt]
+    outputs: [build_log.json, builder_done.json]
+---
+
+# Builder Subagent
+
+You execute the Minecraft build commands by running the Python builder module.
+
+## Your Task
+
+1. **Run the builder** via Bash:
+
+```bash
+python -m kasukabe.agents.builder --workspace <WORKSPACE> --origin <ORIGIN> --size <SIZE>
+```
+
+2. **Check the result**: Read `build_log.json` and `builder_done.json` from the workspace.
+3. **Report status**: Return a brief summary of commands executed, success/failure counts.
+
+## Error Handling
+- If the builder exits non-zero, read stderr for the error message.
+- Common issues: bridge not running, RCON connection refused, commands.txt missing.
+- Report the error clearly — do NOT retry. The Foreman will decide what to do.
+
 ## Minecraft Context
 
 ### Valid Block IDs (Minecraft 1.21 Java Edition)
@@ -34,3 +65,14 @@ Connection details are configured via environment variables (see `.env`). Defaul
 - RCON password: `$CRAFTSMEN_RCON_PASSWORD` (default for local dev only)
 - Mineflayer bridge: `$KASUKABE_BRIDGE_URL` (default `http://localhost:3001`)
 - Bridge endpoints: `GET /status`, `POST /command`, `GET /block/:x/:y/:z`, `POST /blocks`
+
+## Platform Instructions (Codex)
+
+### Tool Usage
+- **Read files/images**: Use your file read capabilities
+- **Write files**: Use your file write capabilities
+- **Run commands**: Use shell execution
+
+### Execution Mode
+In Codex, this skill runs as an inline step within the Foreman's execution context. There is no separate subagent — complete each step sequentially and write your output files before moving to the next step.
+

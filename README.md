@@ -3,7 +3,7 @@
 AI-powered Minecraft building automation. Give it an image or video of a structure,
 and kasukabe will analyze, plan, build, and self-correct — all inside Claude Code.
 
-**No API key management needed.** Runs on [Claude Code](https://claude.ai/claude-code) — authentication is handled by your Claude Code session.
+**No API key management needed.** Works with [Claude Code](https://claude.ai/claude-code), [Codex CLI](https://github.com/openai/codex), and [Gemini CLI](https://github.com/google-gemini/gemini-cli).
 
 ## The Pipeline
 
@@ -41,7 +41,7 @@ Input (image/video)
 
 ## Requirements
 
-- [Claude Code](https://claude.ai/claude-code) CLI (authenticated)
+- AI CLI: [Claude Code](https://claude.ai/claude-code), [Codex CLI](https://github.com/openai/codex), or [Gemini CLI](https://github.com/google-gemini/gemini-cli)
 - Python 3.11+
 - Node.js 18+ (for Mineflayer bridge in `bridge/`)
 - Minecraft Paper server with [FAWE](https://github.com/IntellectualSites/FastAsyncWorldEdit) plugin
@@ -53,11 +53,20 @@ Input (image/video)
 # Install Python dependencies
 pip install -e .
 
-# Install Claude Code skills
+# Install skills (auto-detects installed AI CLIs)
 bash setup.sh
+
+# Or install for a specific platform
+bash setup.sh --host claude    # Claude Code
+bash setup.sh --host codex     # Codex CLI
+bash setup.sh --host gemini    # Gemini CLI
+bash setup.sh --host all       # All platforms
+
+# Project-local install (instead of global)
+bash setup.sh --local
 ```
 
-`setup.sh` renders skill templates and symlinks `/kasukabe-build` and `/kasukabe-extract-frames` into `~/.claude/skills/`.
+`setup.sh` generates platform-specific skills and installs them for your AI CLI (Claude Code, Codex, or Gemini).
 
 ## Configuration
 
@@ -155,7 +164,9 @@ workspace/{session_id}/
 PYTHONPATH=. pytest tests/ -v
 
 # Regenerate skill templates after editing .tmpl files
-PYTHONPATH=. python3 scripts/gen_skills.py
+PYTHONPATH=. python3 scripts/gen_skills.py           # all platforms
+PYTHONPATH=. python3 scripts/gen_skills.py --host claude  # single platform
+PYTHONPATH=. python3 scripts/gen_skills.py --check   # verify freshness (CI)
 ```
 
 ## License

@@ -26,5 +26,11 @@ node_modules/
 # Claude Code
 .claude/
 
+# Codex CLI
+.agents/
+
+# Gemini CLI
+.gemini/
+
 # macOS
 .DS_Store
