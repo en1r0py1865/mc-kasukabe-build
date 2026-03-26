@@ -80,10 +80,13 @@ In Claude Code:
 
 ```
 /kasukabe-build house.jpg at 100,64,200 size 12x8x10
+/kasukabe-build house.jpg at 100,64,200 size 12x8x10 --player Steve
 /kasukabe-build timelapse.mp4 at 100,64,200
 /kasukabe-build cabin.png
 /kasukabe-extract-frames walkthrough.mp4
 ```
+
+Use `--player <name>` to teleport your character to the build site before construction begins.
 
 ## Server Setup
 

@@ -17,6 +17,7 @@ Build a Minecraft structure from an image or video input.
 
 Examples:
 - `/kasukabe-build house.jpg at 100,64,200 size 12x8x10`
+- `/kasukabe-build house.jpg at 100,64,200 size 12x8x10 --player Steve`
 - `/kasukabe-build timelapse.mp4 at 100,64,200`
 - `/kasukabe-build cabin.png` (origin defaults to 100,64,200, size auto-detected)
 
@@ -37,6 +38,7 @@ Extract from the user's message:
 - `input_path`: path to image (jpg/png/gif/webp) or video (mp4/mov/avi/mkv/webm)
 - `origin`: x,y,z coordinates (default: 100,64,200)
 - `size`: WxHxL blocks (default: 0x0x0 = auto-detect)
+- `player_name`: optional player name (from `--player` flag, default: none)
 
 ### Step 0.5: Preflight Check
 
@@ -126,6 +128,22 @@ Spawn a **Planner subagent** (model: see config) with prompt:
 > Read blueprint.json, plan the construction, write commands.txt and planner_done.json.
 
 Check `planner_done.json` — if BLOCKED, stop.
+
+#### 4.pre: Teleport Player (iteration 1 only)
+
+If `player_name` is set and this is iteration 1, teleport the player to a vantage point near the build:
+
+```bash
+curl -s -X POST http://localhost:3001/command \
+  -H 'Content-Type: application/json' \
+  -d '{"command":"tp <player_name> <origin.x + W/2> <origin.y> <origin.z - 3>"}'
+```
+
+Print the command being executed: `Teleporting <player_name>: tp <player_name> <tp_x> <tp_y> <tp_z>`
+
+If `player_name` is not set and this is iteration 1, print:
+
+> Tip: Use `--player <name>` to teleport your character to the build site.
 
 #### 4b: Builder
 
