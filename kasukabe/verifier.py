@@ -10,14 +10,15 @@ import sys
 import time
 from pathlib import Path
 
+import os
+
 import requests
 
 from kasukabe.rcon_client import RconClient
 
-BRIDGE_URL = "http://localhost:3001"
-RCON_HOST = "127.0.0.1"
-RCON_PORT = 25575
-RCON_PASSWORD = "minecraft123"
+BRIDGE_URL = os.getenv("KASUKABE_BRIDGE_URL", "http://localhost:3001")
+RCON_HOST = os.getenv("CRAFTSMEN_RCON_HOST", "127.0.0.1")
+RCON_PORT = int(os.getenv("CRAFTSMEN_RCON_PORT", "25575"))
 
 MAX_SAMPLE = 200
 RCON_SPOT_CHECK_LIMIT = 20
@@ -97,9 +98,10 @@ def _rcon_spot_check(
     null_indices: list[int],
     rcon_host: str = RCON_HOST,
     rcon_port: int = RCON_PORT,
-    rcon_password: str = RCON_PASSWORD,
+    rcon_password: str | None = None,
 ) -> None:
     """Fill in null bridge results using RCON /data get block."""
+    rcon_password = rcon_password or os.getenv("CRAFTSMEN_RCON_PASSWORD", "")
     check_indices = null_indices[:RCON_SPOT_CHECK_LIMIT]
     try:
         rcon = RconClient(rcon_host, rcon_port, rcon_password)
@@ -133,7 +135,7 @@ def verify(
     bridge_url: str = BRIDGE_URL,
     rcon_host: str = RCON_HOST,
     rcon_port: int = RCON_PORT,
-    rcon_password: str = RCON_PASSWORD,
+    rcon_password: str | None = None,
 ) -> dict:
     """Verify build quality by comparing blueprint vs actual blocks.
 
@@ -171,7 +173,8 @@ def verify(
     # RCON spot-check for nulls
     null_indices = [i for i, a in enumerate(actual) if not a.get("found")]
     if null_indices:
-        _rcon_spot_check(sampled, actual, null_indices, rcon_host, rcon_port, rcon_password)
+        pwd = rcon_password or os.getenv("CRAFTSMEN_RCON_PASSWORD", "")
+        _rcon_spot_check(sampled, actual, null_indices, rcon_host, rcon_port, pwd)
 
     correct = sum(1 for a, e in zip(actual, sampled) if a.get("block") == e["block"])
     completion_rate = correct / len(sampled) if sampled else 0.0
@@ -220,7 +223,7 @@ def main() -> None:
     parser.add_argument("--bridge-url", default=BRIDGE_URL)
     parser.add_argument("--rcon-host", default=RCON_HOST)
     parser.add_argument("--rcon-port", type=int, default=RCON_PORT)
-    parser.add_argument("--rcon-password", default=RCON_PASSWORD)
+    parser.add_argument("--rcon-password", default=os.getenv("CRAFTSMEN_RCON_PASSWORD", ""))
 
     args = parser.parse_args()
     origin = _parse_origin(args.origin)

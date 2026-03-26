@@ -9,14 +9,15 @@ from pathlib import Path
 
 import requests
 
-from kasukabe.rcon_client import RconClient
+import os
+
+from kasukabe.rcon_client import RconClient, from_env as rcon_from_env
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
-BRIDGE_URL = "http://localhost:3001"
-RCON_HOST = "127.0.0.1"
-RCON_PORT = 25575
-RCON_PASSWORD = "minecraft123"
+BRIDGE_URL = os.getenv("KASUKABE_BRIDGE_URL", "http://localhost:3001")
+RCON_HOST = os.getenv("CRAFTSMEN_RCON_HOST", "127.0.0.1")
+RCON_PORT = int(os.getenv("CRAFTSMEN_RCON_PORT", "25575"))
 
 VANILLA_DELAY = 0.15   # seconds between RCON commands
 BRIDGE_DELAY = 0.10    # seconds between bridge commands
@@ -56,12 +57,12 @@ class Builder:
         bridge_url: str = BRIDGE_URL,
         rcon_host: str = RCON_HOST,
         rcon_port: int = RCON_PORT,
-        rcon_password: str = RCON_PASSWORD,
+        rcon_password: str | None = None,
     ) -> None:
         self.bridge_url = bridge_url.rstrip("/")
         self._rcon_host = rcon_host
         self._rcon_port = rcon_port
-        self._rcon_password = rcon_password
+        self._rcon_password = rcon_password or os.getenv("CRAFTSMEN_RCON_PASSWORD", "")
         self._rcon: RconClient | None = None
 
     # ── Command parsing ────────────────────────────────────────────────────────
@@ -198,7 +199,7 @@ def run_from_cli(
     bridge_url: str = BRIDGE_URL,
     rcon_host: str = RCON_HOST,
     rcon_port: int = RCON_PORT,
-    rcon_password: str = RCON_PASSWORD,
+    rcon_password: str | None = None,
 ) -> dict:
     """Run builder from CLI arguments (no SessionState dependency)."""
     builder = Builder(
@@ -260,7 +261,7 @@ def main() -> None:
     parser.add_argument("--bridge-url", default=BRIDGE_URL)
     parser.add_argument("--rcon-host", default=RCON_HOST)
     parser.add_argument("--rcon-port", type=int, default=RCON_PORT)
-    parser.add_argument("--rcon-password", default=RCON_PASSWORD)
+    parser.add_argument("--rcon-password", default=os.getenv("CRAFTSMEN_RCON_PASSWORD", ""))
 
     args = parser.parse_args()
     origin = _parse_origin(args.origin)

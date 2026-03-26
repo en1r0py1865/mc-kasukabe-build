@@ -68,7 +68,16 @@ class RconClient:
 
 
 def from_env() -> 'RconClient':
+    """Create RconClient from environment variables.
+
+    Raises RconError if CRAFTSMEN_RCON_PASSWORD is not set.
+    """
     host = os.getenv('CRAFTSMEN_RCON_HOST', '127.0.0.1')
     port = int(os.getenv('CRAFTSMEN_RCON_PORT', '25575'))
-    password = os.getenv('CRAFTSMEN_RCON_PASSWORD', 'minecraft123')
+    password = os.getenv('CRAFTSMEN_RCON_PASSWORD', '')
+    if not password:
+        raise RconError(
+            "CRAFTSMEN_RCON_PASSWORD not set. "
+            "Copy .env.example to .env and configure your RCON password."
+        )
     return RconClient(host, port, password)
