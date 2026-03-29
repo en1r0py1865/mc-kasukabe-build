@@ -11,7 +11,10 @@ import requests
 
 import os
 
+from kasukabe.env import load_local_env
 from kasukabe.rcon_client import RconClient, from_env as rcon_from_env
+
+load_local_env()
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 

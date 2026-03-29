@@ -14,7 +14,10 @@ import os
 
 import requests
 
+from kasukabe.env import load_local_env
 from kasukabe.rcon_client import RconClient
+
+load_local_env()
 
 BRIDGE_URL = os.getenv("KASUKABE_BRIDGE_URL", "http://localhost:3001")
 RCON_HOST = os.getenv("CRAFTSMEN_RCON_HOST", "127.0.0.1")
@@ -129,6 +132,44 @@ def _rcon_spot_check(
             pass
 
 
+def _rcon_exact_match_check(
+    sampled: list[dict],
+    actual: list[dict],
+    rcon_host: str = RCON_HOST,
+    rcon_port: int = RCON_PORT,
+    rcon_password: str | None = None,
+) -> None:
+    """Verify exact expected block matches via RCON execute-if-block checks."""
+    rcon_password = rcon_password or os.getenv("CRAFTSMEN_RCON_PASSWORD", "")
+    try:
+        rcon = RconClient(rcon_host, rcon_port, rcon_password)
+    except Exception:
+        return
+
+    try:
+        for idx, expected in enumerate(sampled):
+            try:
+                resp = rcon.command(
+                    f"execute if block {expected['x']} {expected['y']} {expected['z']} {expected['block']}"
+                )
+                if "Test passed" in resp:
+                    actual[idx] = {
+                        "x": expected["x"],
+                        "y": expected["y"],
+                        "z": expected["z"],
+                        "block": expected["block"],
+                        "found": True,
+                    }
+                time.sleep(0.02)
+            except Exception:
+                pass
+    finally:
+        try:
+            rcon.close()
+        except Exception:
+            pass
+
+
 def verify(
     workspace_dir: Path,
     origin: tuple[int, int, int],
@@ -175,6 +216,10 @@ def verify(
     if null_indices:
         pwd = rcon_password or os.getenv("CRAFTSMEN_RCON_PASSWORD", "")
         _rcon_spot_check(sampled, actual, null_indices, rcon_host, rcon_port, pwd)
+
+    # Bridge reads can be wrong for far-away or unloaded chunks. Confirm exact matches via RCON.
+    pwd = rcon_password or os.getenv("CRAFTSMEN_RCON_PASSWORD", "")
+    _rcon_exact_match_check(sampled, actual, rcon_host, rcon_port, pwd)
 
     correct = sum(1 for a, e in zip(actual, sampled) if a.get("block") == e["block"])
     completion_rate = correct / len(sampled) if sampled else 0.0

@@ -3,6 +3,11 @@ import socket
 import struct
 from typing import Optional
 
+from kasukabe.env import load_local_env
+
+
+load_local_env()
+
 
 class RconError(RuntimeError):
     pass
