@@ -36,7 +36,7 @@ const CFG = {
     host: process.env.MC_HOST || 'localhost',
     port: parseInt(process.env.MC_PORT) || 25565,
     username: process.env.MC_BOT_USERNAME || 'ClawBot',
-    version: process.env.MC_VERSION || '1.21.1',
+    version: process.env.MC_VERSION || '1.21.11',
     auth: process.env.MC_AUTH || 'offline',
   },
   bridge: {

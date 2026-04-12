@@ -116,6 +116,7 @@ class Builder:
                     resp = self._send_rcon(cmd)
                     log["blocks_changed"] += self._count_changed(resp)
                     log["commands_ok"] += 1
+                    log["rcon_responses"] = log.get("rcon_responses", []) + [resp]
                     time.sleep(VANILLA_DELAY)
             except Exception as exc:  # noqa: BLE001
                 log["commands_failed"] += 1
