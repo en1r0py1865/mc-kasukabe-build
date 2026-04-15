@@ -54,6 +54,10 @@ Determine `input_mode`:
 - If `--mode guide` is specified OR `source_type = "directory"`: `input_mode = "guide"`
 - Otherwise: `input_mode = "standard"`
 
+Determine `source_image_path`:
+- If `source_type = "image"`: `source_image_path = <absolute path to input_path>`
+- Otherwise: `source_image_path = ""` (empty)
+
 ### Step 0.5: Preflight Check
 
 Before creating the workspace, verify the bridge is reachable:
@@ -75,7 +79,7 @@ Do NOT proceed to Step 1 if the bridge is down.
 ### Step 1: Create Workspace
 
 ```bash
-SESSION_ID=$(python -c "import uuid; print(uuid.uuid4().hex[:12])")
+SESSION_ID=$(python3 -c "import uuid; print(uuid.uuid4().hex[:12])")
 mkdir -p workspace/$SESSION_ID/frames
 ```
 
@@ -96,7 +100,7 @@ Write `workspace/$SESSION_ID/input_meta.json`:
 
 If the input file ends with .mp4/.mov/.avi/.mkv/.webm, run video frame extraction:
 ```bash
-python -m kasukabe.video_processor --input <input_path> --output-dir workspace/<SESSION_ID>/frames
+python3 -m kasukabe.video_processor --input <input_path> --output-dir workspace/<SESSION_ID>/frames
 ```
 Report how many frames were extracted.
 
@@ -150,6 +154,8 @@ After the subagent returns, Read `workspace/<SESSION_ID>/architect_done.json`. I
 
 
 ### Step 4: Iteration Loop (max 3)
+
+Track: `architect_revised = false`
 
 For iteration = 1, 2, 3:
 
@@ -210,6 +216,8 @@ Check `builder_done.json` — if BLOCKED, stop.
 
 #### 4c: Inspector
 
+Pass `source_image_path` to the Inspector (used for fidelity check on flat image builds).
+
 Read `inspector/SKILL.md` (installed alongside this skill).
 
 Spawn an **Inspector subagent** (model: sonnet) using the Agent tool with this prompt:
@@ -220,12 +228,72 @@ Spawn an **Inspector subagent** (model: sonnet) using the Agent tool with this p
 >
 > **Workspace**: workspace/<SESSION_ID>
 > **Origin**: <ORIGIN>
+> **Source image**: <SOURCE_IMAGE_PATH> (empty if not an image input)
 
-After return, Read `workspace/<SESSION_ID>/diff_report.json`:
-- If `completion_rate >= 0.85`: break loop, proceed to summary.
+The subagent runs world verification (Step 1-2), then fidelity check (Step 3) if source image is provided and blueprint is flat (`size.z <= 10 AND min(size.x, size.y) >= 20`).
+
+After return, Read `workspace/<SESSION_ID>/inspector_done.json`:
+- If `needs_architect_revision == true`: handle architect revision (see Step 4d).
+- If `completion_rate >= 0.85` and (`blueprint_fidelity >= 0.7` or fidelity was not checked): break loop, proceed to summary.
 - If `should_continue == false`: break loop.
 - Otherwise: continue to next iteration.
 
+
+#### 4d: Decision
+
+Read `workspace/<SESSION_ID>/inspector_done.json` and apply the first matching rule:
+
+1. **Architect revision needed (first time)**:
+   IF `needs_architect_revision == true` AND `architect_revised == false`:
+   → Run architect revision:
+
+   Read the Architect skill file (installed alongside this skill):
+```
+architect/SKILL.md
+```
+
+Spawn an **Architect subagent** (model: opus) using the Agent tool with this prompt:
+
+> You are the Architect subagent for Kasukabe Build, invoked in **Revision Mode**.
+>
+> [Paste the full contents of architect/SKILL.md here]
+>
+> **Workspace**: workspace/<SESSION_ID>
+> **Original source images**: <IMAGE_FILES>
+> **Previous blueprint**: workspace/<SESSION_ID>/blueprint.json
+> **Fidelity comparison**: workspace/<SESSION_ID>/fidelity_comparison.png
+> **Fidelity crops**: workspace/<SESSION_ID>/fidelity_crop_0.png, fidelity_crop_1.png, ... (all that exist)
+> **Fidelity result**: workspace/<SESSION_ID>/fidelity_result.json
+> **Diff report**: workspace/<SESSION_ID>/diff_report.json (see `semantic_issues` and `blueprint_fidelity`)
+>
+> Follow the **Revision Mode** instructions in the skill:
+> 1. Read the original source images (ground truth)
+> 2. Read the comparison and crop images to understand what differs
+> 3. Read the previous blueprint.json and semantic_issues from diff_report.json
+> 4. Fix flagged regions to better match the source — preserve correct areas
+> 5. Overwrite blueprint.json and write architect_done.json
+
+After the subagent returns, Read `workspace/<SESSION_ID>/architect_done.json`. If status is BLOCKED, stop and report the reason.
+
+
+   → Set `architect_revised = true`
+   → Continue to next iteration (re-plan + re-build from revised blueprint)
+
+2. **Build complete**:
+   ELIF `completion_rate >= 0.85` AND (`blueprint_fidelity >= 0.7` OR `fidelity_check_performed == false`):
+   → Break, proceed to Step 5
+
+3. **No further fixes possible**:
+   ELIF `should_continue == false`:
+   → Break, proceed to Step 5
+
+4. **Architect revision already attempted**:
+   ELIF `needs_architect_revision == true` AND `architect_revised == true`:
+   → Break, proceed to Step 5 (fidelity issues persist after 1 revision attempt)
+
+5. **Normal fix path**:
+   ELSE:
+   → Continue to next iteration (apply `fix_commands` from `diff_report.json`)
 
 ### Step 5: Summary
 
@@ -236,9 +304,12 @@ Write `workspace/<SESSION_ID>/foreman_summary.json`:
   "phase": "DONE",
   "iterations": N,
   "completion_rate": 0.XX,
+  "blueprint_fidelity": 0.XX,
+  "architect_revised": false,
   "workspace": "workspace/<SESSION_ID>/"
 }
 ```
+Omit `blueprint_fidelity` if fidelity check was not performed.
 
 Report the final status to the user.
 

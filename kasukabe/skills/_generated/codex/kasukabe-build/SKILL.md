@@ -48,6 +48,10 @@ Determine `input_mode`:
 - If `--mode guide` is specified OR `source_type = "directory"`: `input_mode = "guide"`
 - Otherwise: `input_mode = "standard"`
 
+Determine `source_image_path`:
+- If `source_type = "image"`: `source_image_path = <absolute path to input_path>`
+- Otherwise: `source_image_path = ""` (empty)
+
 ### Step 0.5: Preflight Check
 
 Before creating the workspace, verify the bridge is reachable:
@@ -69,7 +73,7 @@ Do NOT proceed to Step 1 if the bridge is down.
 ### Step 1: Create Workspace
 
 ```bash
-SESSION_ID=$(python -c "import uuid; print(uuid.uuid4().hex[:12])")
+SESSION_ID=$(python3 -c "import uuid; print(uuid.uuid4().hex[:12])")
 mkdir -p workspace/$SESSION_ID/frames
 ```
 
@@ -90,7 +94,7 @@ Write `workspace/$SESSION_ID/input_meta.json`:
 
 If the input file ends with .mp4/.mov/.avi/.mkv/.webm, run video frame extraction:
 ```bash
-python -m kasukabe.video_processor --input <input_path> --output-dir workspace/<SESSION_ID>/frames
+python3 -m kasukabe.video_processor --input <input_path> --output-dir workspace/<SESSION_ID>/frames
 ```
 Report how many frames were extracted.
 
@@ -196,6 +200,8 @@ If a `style_directive` is provided, use it to influence material and aesthetic c
 
 ### Step 4: Iteration Loop (max 3)
 
+Track: `architect_revised = false`
+
 For iteration = 1, 2, 3:
 
 #### 4a: Planner
@@ -260,7 +266,7 @@ If `player_name` is not set and this is iteration 1, print:
 Run the Python builder module to execute Minecraft commands:
 
 ```bash
-python -m kasukabe.agents.builder --workspace workspace/<SESSION_ID> --origin <ORIGIN> --size <SIZE>
+python3 -m kasukabe.agents.builder --workspace workspace/<SESSION_ID> --origin <ORIGIN> --size <SIZE>
 ```
 
 After execution, read `workspace/<SESSION_ID>/build_log.json` and `workspace/<SESSION_ID>/builder_done.json`.
@@ -275,12 +281,16 @@ Check `builder_done.json` — if BLOCKED, stop.
 
 #### 4c: Inspector
 
+Pass `source_image_path` to the Inspector (used for fidelity check on flat image builds).
+
 **Execute Inspector Step (inline)**:
+
+**Source image**: <SOURCE_IMAGE_PATH> (empty if not an image input)
 
 **Step 1: Run Block Verification**
 
 ```bash
-python -m kasukabe.verifier --workspace workspace/<SESSION_ID> --origin <ORIGIN>
+python3 -m kasukabe.verifier --workspace workspace/<SESSION_ID> --origin <ORIGIN>
 ```
 
 Read `workspace/<SESSION_ID>/verification_result.json`.
@@ -299,6 +309,24 @@ Read `verification_result.json` and `blueprint.json`. Analyze the mismatches and
 - Include only the top 20 most critical fixes
 - Format: `setblock x y z minecraft:block` or `fill x1 y1 z1 x2 y2 z2 minecraft:block`
 
+**Step 3: Blueprint Fidelity Check (flat image builds only)**
+
+If `<SOURCE_IMAGE_PATH>` is non-empty AND blueprint `size.z <= 10` AND `min(size.x, size.y) >= 20`:
+
+```bash
+python3 -m kasukabe.fidelity --workspace workspace/<SESSION_ID> --source-image <SOURCE_IMAGE_PATH>
+```
+
+Read `fidelity_result.json` (note `pixel_diff_ratio`, `unknown_pixel_ratio`, `aspect_ratio_match`, `unknown_blocks`), `fidelity_comparison.png`, and each `fidelity_crop_N.png`.
+Blocks in `unknown_blocks` render as magenta — this is a palette gap, not a build error. `unknown_pixel_ratio` shows what fraction of render pixels are affected.
+If `aspect_ratio_match < 0.8`, the blueprint has significantly different proportions than the source. Treat this as a fidelity issue and lower `blueprint_fidelity`, regardless of how `pixel_diff_ratio` looks.
+If `unknown_pixel_ratio > 0.3`, `pixel_diff_ratio` is unreliable due to low palette coverage. Rely on direct visual comparison of the source image vs `fidelity_render.png`. Do not lower `blueprint_fidelity` solely because of palette gaps — judge based on visible (non-magenta) portions.
+
+Judge `blueprint_fidelity` (0.0-1.0): 0.9+ faithful, 0.7-0.89 minor, <0.7 needs revision.
+If `blueprint_fidelity < 0.7`: list `semantic_issues` and set `needs_architect_revision = true`.
+
+If conditions are not met, set `fidelity_check_performed = false`.
+
 Write `workspace/<SESSION_ID>/diff_report.json`:
 ```json
 {
@@ -309,18 +337,79 @@ Write `workspace/<SESSION_ID>/diff_report.json`:
   "total_blueprint_blocks": N,
   "sampled_blocks": N,
   "correct_blocks": N,
-  "errors": [...]
+  "errors": [...],
+  "blueprint_fidelity": 0.82,
+  "pixel_diff_ratio": 0.15,
+  "semantic_issues": [],
+  "fidelity_check_performed": true
 }
 ```
 
 Write `workspace/<SESSION_ID>/inspector_done.json`:
-`{"status": "DONE", "completion_rate": 0.85, "should_continue": true}`
+```json
+{"status": "DONE", "completion_rate": 0.85, "should_continue": true, "fidelity_check_performed": true, "blueprint_fidelity": 0.82, "needs_architect_revision": false}
+```
+When fidelity check was not performed: set `fidelity_check_performed = false` and omit `blueprint_fidelity` and `needs_architect_revision`.
 
 After completing:
-- If `completion_rate >= 0.85`: break loop, proceed to summary.
+- If `needs_architect_revision == true`: handle architect revision (see Step 4d).
+- If `completion_rate >= 0.85` and (`blueprint_fidelity >= 0.7` or fidelity was not checked): break loop, proceed to summary.
 - If `should_continue == false`: break loop.
 - Otherwise: continue to next iteration.
 
+
+#### 4d: Decision
+
+Read `workspace/<SESSION_ID>/inspector_done.json` and apply the first matching rule:
+
+1. **Architect revision needed (first time)**:
+   IF `needs_architect_revision == true` AND `architect_revised == false`:
+   → Run architect revision:
+
+   **Execute Architect Revision Step (inline)**:
+
+You are now acting as the Architect in **Revision Mode**. The previous blueprint had fidelity issues — fix the flagged regions.
+
+**Workspace**: workspace/<SESSION_ID>
+**Original source images**: <IMAGE_FILES>
+**Previous blueprint**: workspace/<SESSION_ID>/blueprint.json
+**Fidelity comparison**: workspace/<SESSION_ID>/fidelity_comparison.png
+**Fidelity crops**: workspace/<SESSION_ID>/fidelity_crop_0.png, fidelity_crop_1.png, ... (all that exist)
+**Fidelity result**: workspace/<SESSION_ID>/fidelity_result.json
+**Diff report**: workspace/<SESSION_ID>/diff_report.json (see `semantic_issues` and `blueprint_fidelity`)
+
+1. **Read original source images** — these are ground truth
+2. **Read comparison images**: `fidelity_comparison.png` (source left, render right) and each `fidelity_crop_N.png`
+3. **Read previous `blueprint.json`** and `semantic_issues` from `diff_report.json`
+4. For each semantic issue: locate the region in the blueprint, compare source vs render, fix blocks
+5. **Preserve correct regions** — only modify blocks in flagged areas
+6. Overwrite `workspace/<SESSION_ID>/blueprint.json` with the revised version
+7. Set `confidence` to 0.7-0.85
+8. Write `workspace/<SESSION_ID>/architect_done.json`:
+   - Success: `{"status": "DONE", "block_count": N}`
+   - Failure: `{"status": "BLOCKED", "reason": "..."}`
+
+After completing, read `workspace/<SESSION_ID>/architect_done.json`. If status is BLOCKED, stop and report the reason.
+
+
+   → Set `architect_revised = true`
+   → Continue to next iteration (re-plan + re-build from revised blueprint)
+
+2. **Build complete**:
+   ELIF `completion_rate >= 0.85` AND (`blueprint_fidelity >= 0.7` OR `fidelity_check_performed == false`):
+   → Break, proceed to Step 5
+
+3. **No further fixes possible**:
+   ELIF `should_continue == false`:
+   → Break, proceed to Step 5
+
+4. **Architect revision already attempted**:
+   ELIF `needs_architect_revision == true` AND `architect_revised == true`:
+   → Break, proceed to Step 5 (fidelity issues persist after 1 revision attempt)
+
+5. **Normal fix path**:
+   ELSE:
+   → Continue to next iteration (apply `fix_commands` from `diff_report.json`)
 
 ### Step 5: Summary
 
@@ -331,9 +420,12 @@ Write `workspace/<SESSION_ID>/foreman_summary.json`:
   "phase": "DONE",
   "iterations": N,
   "completion_rate": 0.XX,
+  "blueprint_fidelity": 0.XX,
+  "architect_revised": false,
   "workspace": "workspace/<SESSION_ID>/"
 }
 ```
+Omit `blueprint_fidelity` if fidelity check was not performed.
 
 Report the final status to the user.
 

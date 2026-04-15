@@ -3,7 +3,7 @@
 Run the Python builder module to execute Minecraft commands:
 
 ```bash
-python -m kasukabe.agents.builder --workspace workspace/<SESSION_ID> --origin <ORIGIN> --size <SIZE>
+python3 -m kasukabe.agents.builder --workspace workspace/<SESSION_ID> --origin <ORIGIN> --size <SIZE>
 ```
 
 After execution, read `workspace/<SESSION_ID>/build_log.json` and `workspace/<SESSION_ID>/builder_done.json`.

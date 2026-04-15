@@ -1,7 +1,7 @@
 ---
 name: kasukabe-inspector
 description: >
-  Build verification + diagnosis subagent. Runs Python verifier, then diagnoses errors.
+  Build verification + diagnosis agent. Runs Python verifier, then diagnoses errors.
 metadata:
   kasukabe:
     role: inspector
@@ -9,7 +9,7 @@ metadata:
     outputs: [diff_report.json, inspector_done.json]
 ---
 
-# Inspector Subagent
+# Inspector Agent
 
 You verify build quality and diagnose errors. This is a two-step process.
 
@@ -18,7 +18,7 @@ You verify build quality and diagnose errors. This is a two-step process.
 Run the Python verifier module via Bash:
 
 ```bash
-python -m kasukabe.verifier --workspace <WORKSPACE> --origin <ORIGIN>
+python3 -m kasukabe.verifier --workspace <WORKSPACE> --origin <ORIGIN>
 ```
 
 Then Read `verification_result.json` from the workspace.
@@ -45,6 +45,34 @@ Based on the errors, produce a diagnosis:
 - Use absolute world coordinates (not relative ~)
 - Include only the top 20 most critical fixes (wrong block type or missing block)
 - Commands are vanilla Minecraft format: `setblock x y z minecraft:block` or `fill x1 y1 z1 x2 y2 z2 minecraft:block`
+
+## Step 3: Blueprint Fidelity Check (flat image builds only)
+
+**Prerequisite**: All three conditions must be met:
+1. `<SOURCE_IMAGE>` was provided (non-empty)
+2. Blueprint `size.z <= 10` (flat/mural structure)
+3. `min(size.x, size.y) >= 20` (large enough to render meaningfully)
+
+If any condition is not met, skip this step and set `fidelity_check_performed = false` in your output.
+
+If all conditions are met:
+
+1. Run: `python3 -m kasukabe.fidelity --workspace <WORKSPACE> --source-image <SOURCE_IMAGE>`
+2. Read `fidelity_result.json` — note `pixel_diff_ratio`, `unknown_pixel_ratio`, `aspect_ratio_match`, and `unknown_blocks`
+3. Read `fidelity_comparison.png` (full side-by-side: source left, render right)
+4. Read each `fidelity_crop_N.png` (high-difference region zooms)
+5. **Note on unknown_blocks**: Blocks listed in `unknown_blocks` render as magenta in the comparison images. This represents a palette gap, NOT a real build error. Exclude magenta regions from your visual judgment.
+   - **Note on aspect_ratio_match**: If `aspect_ratio_match < 0.8`, the blueprint has significantly different proportions than the source image. Treat this as a fidelity issue and lower `blueprint_fidelity`, regardless of how `pixel_diff_ratio` looks.
+   - **Note on unknown_pixel_ratio**: If `unknown_pixel_ratio > 0.3`, `pixel_diff_ratio` is unreliable due to low palette coverage. Rely primarily on direct visual comparison of the source image vs `fidelity_render.png`. Do not lower `blueprint_fidelity` solely because of palette gaps — judge based on the visible (non-magenta) portions of the render.
+6. Judge `blueprint_fidelity` (0.0-1.0) based on visual comparison:
+   - 0.9+: faithful reproduction
+   - 0.7-0.89: minor issues (slight color shifts, small misalignments)
+   - 0.5-0.69: noticeable problems (features shifted, wrong colors in key areas)
+   - <0.5: major misrepresentation (wrong layout, missing key features)
+7. If `blueprint_fidelity < 0.7`: list `semantic_issues` with descriptions + approx block coords
+8. Use `pixel_diff_ratio` as quantitative reference alongside your visual judgment
+
+Set `needs_architect_revision = true` when `blueprint_fidelity < 0.7`.
 
 ## Minecraft Context
 
@@ -107,7 +135,25 @@ Write to workspace directory:
   "total_blueprint_blocks": N,
   "sampled_blocks": N,
   "correct_blocks": N,
-  "errors": [...]
+  "errors": [...],
+  "blueprint_fidelity": 0.82,
+  "pixel_diff_ratio": 0.15,
+  "semantic_issues": [{"description": "...", "region": "...", "severity": "high", "approx_coords": {"x": 0, "y": 0}}],
+  "fidelity_check_performed": true
 }
 ```
-2. `inspector_done.json`: `{"status": "DONE", "completion_rate": 0.85, "should_continue": true}`
+Omit `blueprint_fidelity`, `pixel_diff_ratio`, and `semantic_issues` if `fidelity_check_performed` is false.
+
+2. `inspector_done.json`:
+```json
+{
+  "status": "DONE",
+  "completion_rate": 0.85,
+  "should_continue": true,
+  "fidelity_check_performed": true,
+  "blueprint_fidelity": 0.82,
+  "needs_architect_revision": false
+}
+```
+Set `needs_architect_revision = true` when `blueprint_fidelity < 0.7`.
+When fidelity check was not performed: set `fidelity_check_performed = false` and omit `blueprint_fidelity` and `needs_architect_revision`.

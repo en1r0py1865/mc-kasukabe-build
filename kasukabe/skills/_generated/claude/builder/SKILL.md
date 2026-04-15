@@ -1,7 +1,7 @@
 ---
 name: kasukabe-builder
 description: >
-  Build executor subagent. Runs Python builder module via Bash to execute commands.
+  Build executor agent. Runs Python builder module via Bash to execute commands.
 metadata:
   kasukabe:
     role: builder
@@ -9,7 +9,7 @@ metadata:
     outputs: [build_log.json, builder_done.json]
 ---
 
-# Builder Subagent
+# Builder Agent
 
 You execute the Minecraft build commands by running the Python builder module.
 
@@ -18,7 +18,7 @@ You execute the Minecraft build commands by running the Python builder module.
 1. **Run the builder** via Bash:
 
 ```bash
-python -m kasukabe.agents.builder --workspace <WORKSPACE> --origin <ORIGIN> --size <SIZE>
+python3 -m kasukabe.agents.builder --workspace <WORKSPACE> --origin <ORIGIN> --size <SIZE>
 ```
 
 2. **Check the result**: Read `build_log.json` and `builder_done.json` from the workspace.

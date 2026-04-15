@@ -21,7 +21,7 @@ def _create_partials(skills_dir: Path, mc_content: str = "context") -> Path:
     for host in ("claude", "codex", "gemini"):
         spawn_dir = partials / f"spawn_{host}"
         spawn_dir.mkdir(parents=True, exist_ok=True)
-        for role in ("architect", "planner", "builder", "inspector"):
+        for role in ("architect", "architect_revision", "planner", "builder", "inspector"):
             (spawn_dir / f"spawn_{role}.md").write_text(f"{host} {role}")
     return partials
 
@@ -131,12 +131,13 @@ class TestGenSkills:
         skill_dir = skills_dir / "foreman"
         skill_dir.mkdir(parents=True)
         (skill_dir / "SKILL.md.tmpl").write_text(
-            "{{spawn_architect}}\n{{spawn_planner}}\n{{spawn_builder}}\n{{spawn_inspector}}"
+            "{{spawn_architect}}\n{{spawn_architect_revision}}\n{{spawn_planner}}\n{{spawn_builder}}\n{{spawn_inspector}}"
         )
 
         render_skills_for_host(skills_dir, "codex")
         out = (skills_dir / "_generated" / "codex" / "foreman" / "SKILL.md").read_text()
         assert "codex architect" in out
+        assert "codex architect_revision" in out
         assert "codex planner" in out
         assert "codex builder" in out
         assert "codex inspector" in out

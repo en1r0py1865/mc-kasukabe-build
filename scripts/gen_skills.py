@@ -24,6 +24,7 @@ ENTRY_FILENAMES: dict[str, str] = {
 # All placeholders that use spawn partials
 SPAWN_PLACEHOLDERS = (
     "spawn_architect",
+    "spawn_architect_revision",
     "spawn_planner",
     "spawn_builder",
     "spawn_inspector",

@@ -21,7 +21,7 @@ Extract keyframes from a video file using scene-change detection (with time-base
 2. Run the extraction:
 
 ```bash
-python -m kasukabe.video_processor --input <video_path> --output-dir <output_dir> --max-frames <N>
+python3 -m kasukabe.video_processor --input <video_path> --output-dir <output_dir> --max-frames <N>
 ```
 
 Defaults: output-dir = `./frames`, max-frames = 8.
