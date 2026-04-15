@@ -34,6 +34,13 @@ Based on the errors, produce a diagnosis:
 3. **should_continue**: `true` if fixes are needed, `false` if build looks complete or no meaningful fixes possible
 4. **completion_rate**: Copy from verification_result.json
 
+## Semantic Guardrails
+
+- `completion_rate` only measures world-vs-blueprint agreement. It does **not** prove the blueprint matches the original reference image.
+- If the task is an image mural or face-heavy build, treat user-reported semantic errors such as "the eye is in the wrong place" or "the yellow belongs in the eye, not above it" as blueprint-quality failures even when `completion_rate == 1.0`.
+- Do not describe a build as "correct" or "matching the source" based only on verifier output. At most, say it matches the current blueprint unless the reference image was re-checked.
+- When a tiny feature can flip meaning with a 1-block shift, recommend a local blueprint patch rather than relying on verifier success.
+
 ## Fix Command Rules
 - Use absolute world coordinates (not relative ~)
 - Include only the top 20 most critical fixes (wrong block type or missing block)

@@ -2,8 +2,15 @@
 
 You are now acting as the Architect. Analyze the provided images and produce a precise JSON blueprint.
 
-1. **Read images**: Read each image file: <IMAGE_FILES>
-2. **Analyze the structure**: Identify building type, dimensions, materials, layer composition.
+**Workspace**: workspace/<SESSION_ID>
+**Origin**: <ORIGIN>
+**Size**: <SIZE> (0x0x0 = auto-detect)
+**Image files**: <IMAGE_FILES>
+**Input mode**: <INPUT_MODE>
+**Style directive**: <STYLE_DIRECTIVE>
+
+1. **Read images**: Read each image file listed above.
+2. **Analyze the structure**: Identify building type, dimensions, materials, layer composition. If input mode is "guide", follow the **Guide Mode** section below before proceeding. If a style directive is provided, follow the **Style Directive** section below.
 3. **Generate blueprint**: Write `workspace/<SESSION_ID>/blueprint.json` with this schema:
 
 ```json
@@ -40,3 +47,27 @@ You are now acting as the Architect. Analyze the provided images and produce a p
    - Failure: `{"status": "BLOCKED", "reason": "..."}`
 
 After completing, read `workspace/<SESSION_ID>/architect_done.json`. If status is BLOCKED, stop and report the reason.
+
+---
+
+#### Guide Mode (when input_mode = "guide")
+
+The images come from a step-by-step Minecraft building guide. They may include:
+- **Finished build photos**: the completed structure from various angles
+- **Layer-by-layer views**: top-down or cross-section views showing block placement per Y-level
+- **Block material lists**: screenshots showing required materials and quantities
+
+Instructions:
+- **Analyze ALL images carefully.** Layer views are the most valuable — they show exact block placement per level.
+- **Cross-reference** material lists against layer views to identify correct block types.
+- **Preserve the exact structure, shape, and proportions** from the guide.
+- **Vary the material palette** to create a unique version — swap block types while keeping the same structural logic (e.g., stone bricks → deepslate bricks, oak → dark oak).
+  - If a `style_directive` is provided (e.g., "nether theme"), reinterpret materials and decorative details using that aesthetic.
+  - If `style_directive` is empty, make a tasteful palette swap that preserves the feel.
+- If the user explicitly requests an exact replica, skip variation and reproduce faithfully.
+- In `meta.style`, describe the variation chosen (e.g., "deepslate variant of medieval stone house").
+- `confidence` should be 0.8+ when layer views are available.
+
+#### Style Directive
+
+If a `style_directive` is provided, use it to influence material and aesthetic choices **regardless of input mode**. For example, `--style "nether theme"` means prefer nether blocks (blackstone, nether bricks, crimson wood, etc.).

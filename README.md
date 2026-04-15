@@ -1,7 +1,8 @@
 # kasukabe — Minecraft AI Building Studio
 
-AI-powered Minecraft building automation. Give it an image or video of a structure,
-and kasukabe will analyze, plan, build, and self-correct — all inside Claude Code.
+AI-powered Minecraft building automation. Give it an image, video, or directory of
+building guide screenshots, and kasukabe will analyze, plan, build, and self-correct
+— all inside Claude Code.
 
 **No API key management needed.** Works with [Claude Code](https://claude.ai/claude-code), [Codex CLI](https://github.com/openai/codex), and [Gemini CLI](https://github.com/google-gemini/gemini-cli).
 
@@ -10,7 +11,7 @@ and kasukabe will analyze, plan, build, and self-correct — all inside Claude C
     /kasukabe-build house.jpg at 100,64,200 size 12x8x10
 
 ```
-Input (image/video)
+Input (image/video/directory)
     ↓
 [Architect]   — vision analysis → blueprint.json
     ↓
@@ -27,7 +28,7 @@ Input (image/video)
 
 | Skill | Role | What it does |
 |-------|------|-------------|
-| `/kasukabe-build` | **Foreman** | The full pipeline. Parses your input, creates a workspace, spawns each agent as a subagent in sequence. Iterates Planner → Builder → Inspector up to 3 times until the build hits 85% completion. One command, entire build. |
+| `/kasukabe-build` | **Foreman** | The full pipeline. Accepts images, video, or guide directories. Parses your input, creates a workspace, spawns each agent as a subagent in sequence. Iterates Planner → Builder → Inspector up to 3 times until the build hits 85% completion. One command, entire build. |
 | `/kasukabe-extract-frames` | **Video Processor** | Standalone keyframe extraction. Scene-change detection with time-based fallback, outputs up to 8 JPEG frames at 1280×720. Use independently or let `/kasukabe-build` call it automatically for video input. |
 
 ### Internal agents (spawned automatically by `/kasukabe-build`)
@@ -92,6 +93,9 @@ In Claude Code:
 /kasukabe-build house.jpg at 100,64,200 size 12x8x10 --player Steve
 /kasukabe-build timelapse.mp4 at 100,64,200
 /kasukabe-build cabin.png
+/kasukabe-build ./buildit-castle/ at 100,64,200 size 20x30x20
+/kasukabe-build ./buildit-castle/ at 100,64,200 --mode guide --style "nether theme"
+/kasukabe-build house.jpg at 100,64,200 --mode guide --style "dark oak variant"
 /kasukabe-extract-frames walkthrough.mp4
 ```
 

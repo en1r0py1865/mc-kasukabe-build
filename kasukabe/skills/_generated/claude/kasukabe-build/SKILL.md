@@ -1,18 +1,18 @@
 ---
 name: kasukabe-build
 description: >
-  Build Minecraft structures from images or video. Orchestrates the full pipeline:
+  Build Minecraft structures from images, video, or building guide directories. Orchestrates the full pipeline:
   video extraction -> visual analysis -> command planning -> building -> inspection.
 ---
 
 # Kasukabe Build
 
-Build a Minecraft structure from an image or video input.
+Build a Minecraft structure from an image, video, or directory of guide images.
 
 ## Usage
 
 ```
-/kasukabe-build <path-to-image-or-video> at <x>,<y>,<z> size <W>x<H>x<L>
+/kasukabe-build <path-to-image-or-video-or-directory> at <x>,<y>,<z> size <W>x<H>x<L>
 ```
 
 Examples:
@@ -20,6 +20,9 @@ Examples:
 - `/kasukabe-build house.jpg at 100,64,200 size 12x8x10 --player Steve`
 - `/kasukabe-build timelapse.mp4 at 100,64,200`
 - `/kasukabe-build cabin.png` (origin defaults to 100,64,200, size auto-detected)
+- `/kasukabe-build ./buildit-castle/ at 100,64,200 size 20x30x20` (directory auto-enables guide mode)
+- `/kasukabe-build ./buildit-castle/ at 100,64,200 --mode guide --style "nether theme"`
+- `/kasukabe-build house.jpg at 100,64,200 --mode guide --style "dark oak variant"`
 
 ## Model Configuration
 
@@ -36,10 +39,20 @@ You are the Foreman. Follow these steps exactly.
 ### Step 0: Parse Input
 
 Extract from the user's message:
-- `input_path`: path to image (jpg/png/gif/webp) or video (mp4/mov/avi/mkv/webm)
+- `input_path`: path to image (jpg/png/gif/webp), video (mp4/mov/avi/mkv/webm), or directory
 - `origin`: x,y,z coordinates (default: 100,64,200)
 - `size`: WxHxL blocks (default: 0x0x0 = auto-detect)
 - `player_name`: optional player name (from `--player` flag, default: none)
+- `style_directive`: from `--style "..."` flag (default: empty). Influences material/aesthetic choices.
+
+Determine `source_type`:
+- If `input_path` is a directory (check with `test -d`): `source_type = "directory"`
+- If `input_path` ends with .mp4/.mov/.avi/.mkv/.webm: `source_type = "video"`
+- Otherwise: `source_type = "image"`
+
+Determine `input_mode`:
+- If `--mode guide` is specified OR `source_type = "directory"`: `input_mode = "guide"`
+- Otherwise: `input_mode = "standard"`
 
 ### Step 0.5: Preflight Check
 
@@ -71,7 +84,9 @@ Write `workspace/$SESSION_ID/input_meta.json`:
 {
   "session_id": "<SESSION_ID>",
   "source_path": "<absolute path to input>",
-  "source_type": "image|video",
+  "source_type": "image|video|directory",
+  "input_mode": "standard|guide",
+  "style_directive": "",
   "origin": [x, y, z],
   "size": [W, H, L]
 }
@@ -84,6 +99,29 @@ If the input file ends with .mp4/.mov/.avi/.mkv/.webm, run video frame extractio
 python -m kasukabe.video_processor --input <input_path> --output-dir workspace/<SESSION_ID>/frames
 ```
 Report how many frames were extracted.
+
+### Step 2.5: Directory Processing (if source_type = "directory")
+
+If the input is a directory, find and copy all image files into the workspace in one step:
+
+```bash
+find <input_path> -maxdepth 1 -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.gif' -o -iname '*.webp' \) -print0 | sort -z | xargs -0 -I {} cp {} workspace/<SESSION_ID>/frames/
+```
+
+Count the copied files:
+```bash
+IMAGE_COUNT=$(ls workspace/<SESSION_ID>/frames/ | wc -l | tr -d ' ')
+```
+
+If `IMAGE_COUNT` is 0, **stop immediately** and tell the user:
+> No image files found in directory `<input_path>`. Supported formats: jpg, jpeg, png, gif, webp.
+
+If `IMAGE_COUNT` > 20, report a warning (but continue automatically):
+> Note: Found N images — this is a large set and may increase processing time and cost.
+
+Report: `Found N guide images in <input_path>.`
+
+The image files for the Architect are now in `workspace/<SESSION_ID>/frames/`.
 
 ### Step 3: Architect (once)
 
@@ -102,8 +140,11 @@ Spawn an **Architect subagent** (model: opus) using the Agent tool with this pro
 > **Origin**: <ORIGIN>
 > **Size**: <SIZE> (0x0x0 = auto-detect)
 > **Image files**: <IMAGE_FILES>
+> **Input mode**: <INPUT_MODE>
+> **Style directive**: <STYLE_DIRECTIVE>
 >
 > Read each image file, analyze the structure, and write blueprint.json and architect_done.json to the workspace.
+> If input mode is "guide", follow the Guide Mode instructions in the skill.
 
 After the subagent returns, Read `workspace/<SESSION_ID>/architect_done.json`. If status is BLOCKED, stop and report the reason.
 
@@ -200,6 +241,14 @@ Write `workspace/<SESSION_ID>/foreman_summary.json`:
 ```
 
 Report the final status to the user.
+
+### Reporting Rule For Image Murals
+
+When the build is based on a photo or mural:
+
+- Do not claim the result is faithful to the original image based only on `completion_rate`.
+- If verification passed but the reference image was not re-checked after a semantic patch, report that the world matches the current blueprint, not necessarily the source image.
+- If the user reports a semantic mismatch in a small feature, treat that as a real build error and continue from the original reference image, not from the assumption that verifier success means the feature is correct.
 
 ## Minecraft Context
 

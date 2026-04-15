@@ -187,7 +187,7 @@ done
 
 # Step 4: Summary
 echo "Installed skills:"
-echo "  /kasukabe-build          — Build structures from images/video"
+echo "  /kasukabe-build          — Build structures from images/video/guide directories"
 echo "  /kasukabe-extract-frames — Extract keyframes from video"
 echo "  /architect               — Vision analysis (internal)"
 echo "  /planner                 — Command strategy (internal)"

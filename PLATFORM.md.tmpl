@@ -1,12 +1,12 @@
 # kasukabe — Minecraft AI Building Studio
 
-AI-powered Minecraft building from images and video. Give kasukabe a reference image or video of a structure, and it will analyze, plan, build, and self-correct inside your Minecraft world.
+AI-powered Minecraft building from images, video, or building guide directories. Give kasukabe a reference image, video, or a directory of guide screenshots, and it will analyze, plan, build, and self-correct inside your Minecraft world.
 
 ## Available Commands
 
 | Command | Description |
 |---------|-------------|
-| `/kasukabe-build` | Full build pipeline. Analyzes input, generates a blueprint, places blocks, inspects, and iterates up to 3x until completion rate >= 85%. |
+| `/kasukabe-build` | Full build pipeline. Accepts images, video, or guide directories. Generates a blueprint, places blocks, inspects, and iterates up to 3x until completion rate >= 85%. |
 | `/kasukabe-extract-frames` | Standalone keyframe extraction from video. Scene-change detection with time-based fallback, outputs up to 8 JPEG frames at 1280x720. |
 
 ### Usage Examples
@@ -16,13 +16,16 @@ AI-powered Minecraft building from images and video. Give kasukabe a reference i
 /kasukabe-build house.jpg at 100,64,200 size 12x8x10 --player Steve
 /kasukabe-build timelapse.mp4 at 100,64,200
 /kasukabe-build cabin.png
+/kasukabe-build ./buildit-castle/ at 100,64,200 size 20x30x20
+/kasukabe-build ./buildit-castle/ at 100,64,200 --mode guide --style "nether theme"
+/kasukabe-build house.jpg at 100,64,200 --mode guide --style "dark oak variant"
 /kasukabe-extract-frames walkthrough.mp4
 ```
 
 ## Pipeline
 
 ```
-Input (image/video)
+Input (image/video/directory)
     |
 [Architect]   -- vision analysis --> blueprint.json
     |

@@ -13,7 +13,10 @@ Spawn an **Architect subagent** (model: opus) using the Agent tool with this pro
 > **Origin**: <ORIGIN>
 > **Size**: <SIZE> (0x0x0 = auto-detect)
 > **Image files**: <IMAGE_FILES>
+> **Input mode**: <INPUT_MODE>
+> **Style directive**: <STYLE_DIRECTIVE>
 >
 > Read each image file, analyze the structure, and write blueprint.json and architect_done.json to the workspace.
+> If input mode is "guide", follow the Guide Mode instructions in the skill.
 
 After the subagent returns, Read `workspace/<SESSION_ID>/architect_done.json`. If status is BLOCKED, stop and report the reason.

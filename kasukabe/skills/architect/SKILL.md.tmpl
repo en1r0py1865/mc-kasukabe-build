@@ -5,7 +5,7 @@ description: >
 metadata:
   kasukabe:
     role: architect
-    inputs: [workspace/frames/*.jpg, input image]
+    inputs: ["workspace/frames/*.{jpg,jpeg,png,gif,webp}", "input image"]
     outputs: [blueprint.json, architect_done.json]
 ---
 
@@ -20,6 +20,36 @@ You are a Minecraft building architect. Analyze the provided images and produce 
 3. **Generate blueprint**: Write `blueprint.json` to the workspace using the Write tool.
 4. **Validate**: Ensure all block IDs start with `minecraft:`, coordinates are relative (0-indexed).
 5. **Write done marker**: Write `architect_done.json`.
+
+## Image Mural Guardrails
+
+When the input is a photo mural, portrait, animal, or any image with semantically important small features:
+
+- Do not trust global resemblance alone. Critical regions such as eyes, nose, mouth, hands, and silhouette anchors must be checked explicitly.
+- Compare the original reference image and the proposed block layout at the same crop and scale before finalizing the blueprint. If needed, inspect tight crops around the face or other high-salience regions.
+- Treat a 1-block vertical or horizontal shift in a tiny feature as a major semantic error, not a cosmetic difference. For eyes in particular, a single-row shift can turn "yellow eyes" into "yellow marks above the eyes".
+- Prefer preserving semantic placement over preserving an earlier patch. If a prior workspace or quantized preview disagrees with the original reference image, the original reference image wins.
+- When using bright accent colors in dark regions, verify that the accent sits in the intended feature itself, not in an adjacent row or contour band.
+- If confidence depends on a tiny facial feature reading correctly and you cannot confirm it from the reference image, lower confidence instead of guessing.
+
+## Guide Mode (when input_mode = "guide")
+
+The provided images come from a step-by-step Minecraft building guide. They may include:
+- **Finished build photos**: the completed structure from various angles
+- **Layer-by-layer views**: top-down or cross-section views showing block placement per Y-level
+- **Block material lists**: screenshots showing required materials and quantities
+
+### Guide Mode Instructions
+
+- **Analyze ALL images carefully.** Layer views are the most valuable — they show exact block placement per level.
+- **Cross-reference** material lists against layer views to identify correct block types.
+- **Preserve the exact structure, shape, and proportions** from the guide.
+- **Vary the material palette** to create a unique version — swap block types while keeping the same structural logic (e.g., stone bricks → deepslate bricks, oak → dark oak).
+  - If a `style_directive` is provided (e.g., "nether theme"), reinterpret materials and decorative details using that aesthetic.
+  - If `style_directive` is empty, make a tasteful palette swap that preserves the feel.
+- If the user explicitly requests an exact replica, skip variation and reproduce faithfully.
+- In `meta.style`, describe the variation chosen (e.g., "deepslate variant of medieval stone house").
+- `confidence` should be 0.8+ when layer views are available.
 
 ## Blueprint JSON Schema
 
@@ -52,6 +82,10 @@ You are a Minecraft building architect. Analyze the provided images and produce 
 - If size hint is non-zero, scale structure to fit
 - confidence: 0.9 if materials clearly visible, 0.5 if guessing, 0.3 if very uncertain
 - If your first JSON attempt has errors, fix them before writing
+
+## Style Directive
+
+If a `style_directive` is provided, use it to influence material and aesthetic choices regardless of input mode. For example, `--style "nether theme"` means prefer nether blocks (blackstone, nether bricks, crimson wood, etc.).
 
 {{minecraft_context}}
 {{platform_instructions}}
