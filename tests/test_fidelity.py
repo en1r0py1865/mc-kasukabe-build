@@ -104,6 +104,162 @@ class TestRenderBlueprint:
         assert img.getpixel((1, 0)) == (0, 0, 0)
 
 
+class TestRenderBlueprintAxisAware:
+    """render_blueprint must project onto the correct plane per meta.axis.
+
+    Regression: for xz (floor) and yz (side) murals the old implementation
+    collapsed every block onto y=0, yielding a 1-row render and making
+    pixel_diff_ratio meaningless.
+    """
+
+    def test_xz_floor_projects_x_by_z(self):
+        bp = {
+            "meta": {
+                "axis": "xz",
+                "actual_footprint": {"w": 3, "h": 2},
+                "size": {"x": 3, "y": 1, "z": 2},
+                "origin": {"x": 0, "y": 0, "z": 0},
+            },
+            "blocks": [
+                {"x": 0, "y": 0, "z": 0, "block": "minecraft:red_concrete"},
+                {"x": 2, "y": 0, "z": 0, "block": "minecraft:green_concrete"},
+                {"x": 0, "y": 0, "z": 1, "block": "minecraft:blue_concrete"},
+            ],
+        }
+        img, _ = render_blueprint(bp)
+        # H=2 (z range), W=3 (x range). NOT collapsed to 1 row.
+        assert img.size == (3, 2)
+        # z=0 (bottom row in mural coords) maps to v=0 → image row 1 (v-flip)
+        assert img.getpixel((0, 1)) == BLOCK_COLORS["minecraft:red_concrete"]
+        assert img.getpixel((2, 1)) == BLOCK_COLORS["minecraft:green_concrete"]
+        # z=1 (top row) → image row 0
+        assert img.getpixel((0, 0)) == BLOCK_COLORS["minecraft:blue_concrete"]
+
+    def test_yz_side_projects_z_by_y(self):
+        bp = {
+            "meta": {
+                "axis": "yz",
+                "actual_footprint": {"w": 2, "h": 3},
+                "size": {"x": 1, "y": 3, "z": 2},
+                "origin": {"x": 0, "y": 0, "z": 0},
+            },
+            "blocks": [
+                {"x": 0, "y": 0, "z": 0, "block": "minecraft:red_concrete"},
+                {"x": 0, "y": 2, "z": 1, "block": "minecraft:blue_concrete"},
+            ],
+        }
+        img, _ = render_blueprint(bp)
+        assert img.size == (2, 3)
+        # y=0 → image row 2, y=2 → image row 0
+        assert img.getpixel((0, 2)) == BLOCK_COLORS["minecraft:red_concrete"]
+        assert img.getpixel((1, 0)) == BLOCK_COLORS["minecraft:blue_concrete"]
+
+    def test_default_xy_for_legacy_3d_blueprint(self):
+        """kasukabe-build blueprints have no meta.axis — must default to xy."""
+        bp = _make_blueprint(
+            [
+                {"x": 0, "y": 0, "z": 0, "block": "minecraft:red_concrete"},
+                {"x": 0, "y": 1, "z": 0, "block": "minecraft:blue_concrete"},
+            ],
+            {"x": 1, "y": 2, "z": 1},
+        )
+        # No meta.axis, no meta.actual_footprint → must behave identically to
+        # the pre-axis-aware renderer.
+        img, _ = render_blueprint(bp)
+        assert img.size == (1, 2)
+        assert img.getpixel((0, 1)) == BLOCK_COLORS["minecraft:red_concrete"]
+        assert img.getpixel((0, 0)) == BLOCK_COLORS["minecraft:blue_concrete"]
+
+    def test_xz_floor_picks_max_y_as_top_face(self):
+        """xz floor mural viewed from above → max-y wins (top face is visible)."""
+        bp = {
+            "meta": {
+                "axis": "xz",
+                "actual_footprint": {"w": 1, "h": 1},
+                "size": {"x": 1, "y": 2, "z": 1},
+                "origin": {"x": 0, "y": 0, "z": 0},
+            },
+            "blocks": [
+                {"x": 0, "y": 1, "z": 0, "block": "minecraft:gold_block"},
+                {"x": 0, "y": 0, "z": 0, "block": "minecraft:iron_block"},
+            ],
+        }
+        img, _ = render_blueprint(bp)
+        # max-y (gold, y=1) is the visible top face
+        assert img.getpixel((0, 0)) == BLOCK_COLORS["minecraft:gold_block"]
+
+    def test_xz_floor_mural_not_occluded_by_backdrop_below(self):
+        """Regression: pixel_replica puts xz backdrop at y=-1 (below the mural).
+        The render must show the mural at y=0, NOT the backdrop.
+
+        Before this fix the code used min-y globally, which picked the y=-1
+        backdrop — making pixel_diff_ratio measure backdrop-vs-source.
+        """
+        bp = {
+            "meta": {
+                "axis": "xz",
+                "actual_footprint": {"w": 2, "h": 1},
+                "size": {"x": 2, "y": 1, "z": 1},
+                "origin": {"x": 0, "y": 0, "z": 0},
+            },
+            "blocks": [
+                # Mural pixels at y=0
+                {"x": 0, "y": 0, "z": 0, "block": "minecraft:red_concrete"},
+                {"x": 1, "y": 0, "z": 0, "block": "minecraft:green_concrete"},
+                # Backdrop at y=-1 (pixel_replica places it here for xz)
+                {"x": 0, "y": -1, "z": 0, "block": "minecraft:white_concrete"},
+                {"x": 1, "y": -1, "z": 0, "block": "minecraft:white_concrete"},
+            ],
+        }
+        img, _ = render_blueprint(bp)
+        assert img.getpixel((0, 0)) == BLOCK_COLORS["minecraft:red_concrete"]
+        assert img.getpixel((1, 0)) == BLOCK_COLORS["minecraft:green_concrete"]
+
+    def test_xy_wall_not_occluded_by_backdrop_behind(self):
+        """xy backdrop at z=+1 must NOT occlude the mural at z=0."""
+        bp = {
+            "meta": {
+                "axis": "xy",
+                "actual_footprint": {"w": 1, "h": 1},
+                "size": {"x": 1, "y": 1, "z": 2},
+                "origin": {"x": 0, "y": 0, "z": 0},
+            },
+            "blocks": [
+                {"x": 0, "y": 0, "z": 0, "block": "minecraft:red_concrete"},
+                {"x": 0, "y": 0, "z": 1, "block": "minecraft:white_concrete"},
+            ],
+        }
+        img, _ = render_blueprint(bp)
+        assert img.getpixel((0, 0)) == BLOCK_COLORS["minecraft:red_concrete"]
+
+    def test_yz_side_not_occluded_by_backdrop_behind(self):
+        """yz backdrop at x=+1 must NOT occlude the mural at x=0."""
+        bp = {
+            "meta": {
+                "axis": "yz",
+                "actual_footprint": {"w": 1, "h": 1},
+                "size": {"x": 2, "y": 1, "z": 1},
+                "origin": {"x": 0, "y": 0, "z": 0},
+            },
+            "blocks": [
+                {"x": 0, "y": 0, "z": 0, "block": "minecraft:red_concrete"},
+                {"x": 1, "y": 0, "z": 0, "block": "minecraft:white_concrete"},
+            ],
+        }
+        img, _ = render_blueprint(bp)
+        assert img.getpixel((0, 0)) == BLOCK_COLORS["minecraft:red_concrete"]
+
+    def test_explicit_axis_overrides_meta(self):
+        bp = {
+            "meta": {"axis": "xy", "size": {"x": 2, "y": 1, "z": 1},
+                     "origin": {"x": 0, "y": 0, "z": 0}},
+            "blocks": [{"x": 0, "y": 0, "z": 0, "block": "minecraft:stone"}],
+        }
+        # Override to xz — size.z=1, so H=1.
+        img, _ = render_blueprint(bp, axis="xz")
+        assert img.size == (2, 1)
+
+
 class TestPrepareComparison:
     def test_resizes_to_render_dimensions(self, tmp_path):
         source = Image.new("RGB", (100, 80), (255, 0, 0))

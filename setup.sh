@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 GENERATED_DIR="$SCRIPT_DIR/kasukabe/skills/_generated"
 
 # All skills to install (user-facing + internal)
-SKILLS=(kasukabe-build kasukabe-extract-frames architect planner builder inspector)
+SKILLS=(kasukabe-build kasukabe-pixel kasukabe-extract-frames architect planner builder inspector)
 
 # ── Defaults ──────────────────────────────────────────────────────────
 HOST="auto"
@@ -171,6 +171,18 @@ echo "Rendering skill templates..."
 PYTHONPATH="$SCRIPT_DIR" python3 "$SCRIPT_DIR/scripts/gen_skills.py"
 echo ""
 
+# Step 1.5: Validate block palette against Minecraft 1.21.x registry (offline).
+# Downloads PrismarineJS/minecraft-data on first run (cached under ~/.cache/).
+# Non-fatal: a network failure or schema drift prints a WARN but does not
+# block installation — the runtime palette lookup has a FALLBACK_COLOR path.
+echo "Validating block palette against MC 1.21.x registry..."
+if PYTHONPATH="$SCRIPT_DIR" python3 "$SCRIPT_DIR/scripts/validate_palette.py" --offline; then
+    :
+else
+    echo "  WARN: palette validation failed (see output above). Install continues."
+fi
+echo ""
+
 # Step 2: Resolve which platforms to install for
 read -ra PLATFORMS <<< "$(resolve_hosts)"
 echo "Platforms: ${PLATFORMS[*]}"
@@ -188,6 +200,7 @@ done
 # Step 4: Summary
 echo "Installed skills:"
 echo "  /kasukabe-build          — Build structures from images/video/guide directories"
+echo "  /kasukabe-pixel          — Deterministic pixel mural from 2D image (FAWE schematic)"
 echo "  /kasukabe-extract-frames — Extract keyframes from video"
 echo "  /architect               — Vision analysis (internal)"
 echo "  /planner                 — Command strategy (internal)"

@@ -7,6 +7,7 @@ AI-powered Minecraft building from images, video, or building guide directories.
 | Command | Description |
 |---------|-------------|
 | `/kasukabe-build` | Full build pipeline. Accepts images, video, or guide directories. Generates a blueprint, places blocks, inspects, and iterates up to 3x until completion rate >= 85%. |
+| `/kasukabe-pixel` | Deterministic pixel-art mural pipeline. Image → blueprint (no LLM). Supports xy/xz/yz axes, backlight, backdrop, and `--region` retry for sub-rect rewrites. |
 | `/kasukabe-extract-frames` | Standalone keyframe extraction from video. Scene-change detection with time-based fallback, outputs up to 8 JPEG frames at 1280x720. |
 
 ### Usage Examples
@@ -19,6 +20,9 @@ AI-powered Minecraft building from images, video, or building guide directories.
 /kasukabe-build ./buildit-castle/ at 100,64,200 size 20x30x20
 /kasukabe-build ./buildit-castle/ at 100,64,200 --mode guide --style "nether theme"
 /kasukabe-build house.jpg at 100,64,200 --mode guide --style "dark oak variant"
+/kasukabe-pixel portrait.png at 100,64,200 --size 64x64
+/kasukabe-pixel portrait.png at 100,64,200 --size 64x64 --backlight glowstone_row
+/kasukabe-pixel portrait.png at 100,64,200 --size 64x64 --region 8,8,56,56
 /kasukabe-extract-frames walkthrough.mp4
 ```
 
@@ -51,14 +55,14 @@ Input (image/video/directory)
 cp .env.example .env
 ```
 
-Edit `.env` with your server settings. Default values work for local development:
+Edit `.env` with your server settings. `CRAFTSMEN_RCON_PASSWORD` MUST be set before first run; all other defaults work for local development:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `KASUKABE_BRIDGE_URL` | `http://localhost:3001` | Mineflayer bridge URL |
 | `CRAFTSMEN_RCON_HOST` | `127.0.0.1` | RCON host |
 | `CRAFTSMEN_RCON_PORT` | `25575` | RCON port |
-| `CRAFTSMEN_RCON_PASSWORD` | `minecraft123` | RCON password (change for non-local servers) |
+| `CRAFTSMEN_RCON_PASSWORD` | `<change-me>` | REQUIRED — must match your server's `rcon.password` in `server.properties` |
 
 ## Platform: Claude Code
 
@@ -68,7 +72,7 @@ Edit `.env` with your server settings. Default values work for local development
 bash setup.sh --host claude
 ```
 
-This renders skill templates and symlinks `/kasukabe-build` and `/kasukabe-extract-frames` into `~/.claude/skills/`.
+This renders skill templates and symlinks `/kasukabe-build`, `/kasukabe-pixel`, and `/kasukabe-extract-frames` into `~/.claude/skills/`.
 
 ### How It Works
 
@@ -86,5 +90,6 @@ In Claude Code:
 
 ```
 /kasukabe-build house.jpg at 100,64,200 size 12x8x10
+/kasukabe-pixel portrait.png at 100,64,200 --size 64x64
 ```
 

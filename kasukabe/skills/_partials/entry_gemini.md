@@ -19,4 +19,5 @@ In Gemini CLI:
 
 ```
 /kasukabe-build house.jpg at 100,64,200 size 12x8x10
+/kasukabe-pixel portrait.png at 100,64,200 --size 64x64
 ```

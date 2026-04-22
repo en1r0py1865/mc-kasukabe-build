@@ -17,6 +17,9 @@
 'use strict';
 
 const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
 let mineflayer, pathfinderPlugin, Movements, goals, Vec3;
 try {
   mineflayer = require('mineflayer');
@@ -55,6 +58,74 @@ const state = {
 };
 
 const MAX_BODY_BYTES = 64 * 1024;
+// Upload endpoint needs a much larger cap — schematics can reach a few MB.
+const MAX_UPLOAD_BYTES = 32 * 1024 * 1024;
+
+// ── FAWE schematic dir resolution (3-level fallback) ─────────────────────
+// 1. env KASUKABE_FAWE_SCHEM_DIR
+// 2. ./plugins/FastAsyncWorldEdit/schematics/ (relative to bridge CWD)
+// 3. null (caller gets a useful error)
+function resolveFaweSchemDir() {
+  const envDir = process.env.KASUKABE_FAWE_SCHEM_DIR;
+  if (envDir && fs.existsSync(envDir)) return envDir;
+  const cwdDir = path.resolve(process.cwd(), 'plugins/FastAsyncWorldEdit/schematics');
+  if (fs.existsSync(cwdDir)) return cwdDir;
+  // Also try one level up (bridge is often in ./bridge/ while Paper is at ./)
+  const parentDir = path.resolve(process.cwd(), '../plugins/FastAsyncWorldEdit/schematics');
+  if (fs.existsSync(parentDir)) return parentDir;
+  return null;
+}
+
+function isDirWritable(dir) {
+  try {
+    fs.accessSync(dir, fs.constants.W_OK);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+// ── Minimal multipart/form-data parser for a single file field ────────────
+// Returns { filename, contentType, data (Buffer) } or throws.
+function parseMultipartSingleFile(bodyBuffer, contentTypeHeader) {
+  const m = /boundary=(?:"([^"]+)"|([^;]+))/i.exec(contentTypeHeader || '');
+  if (!m) throw new Error('multipart boundary not found in Content-Type');
+  const boundary = '--' + (m[1] || m[2]);
+  const boundaryBuf = Buffer.from(boundary);
+  // Split body on boundary
+  const parts = [];
+  let idx = 0;
+  while (idx < bodyBuffer.length) {
+    const next = bodyBuffer.indexOf(boundaryBuf, idx);
+    if (next < 0) break;
+    if (idx > 0) parts.push(bodyBuffer.slice(idx, next));
+    idx = next + boundaryBuf.length;
+    // skip CRLF after boundary
+    if (bodyBuffer[idx] === 0x0d && bodyBuffer[idx + 1] === 0x0a) idx += 2;
+  }
+  for (const part of parts) {
+    // Headers and body separated by CRLF CRLF
+    const sep = part.indexOf(Buffer.from('\r\n\r\n'));
+    if (sep < 0) continue;
+    const headers = part.slice(0, sep).toString('utf8');
+    let data = part.slice(sep + 4);
+    // trim trailing CRLF before next boundary
+    if (data.length >= 2 && data[data.length - 2] === 0x0d && data[data.length - 1] === 0x0a) {
+      data = data.slice(0, data.length - 2);
+    }
+    const disp = /Content-Disposition:\s*form-data;([^\r\n]*)/i.exec(headers);
+    if (!disp) continue;
+    const fn = /filename="([^"]*)"/i.exec(disp[1]);
+    if (!fn) continue;
+    const ct = /Content-Type:\s*([^\r\n]+)/i.exec(headers);
+    return {
+      filename: fn[1],
+      contentType: ct ? ct[1].trim() : 'application/octet-stream',
+      data,
+    };
+  }
+  throw new Error('no file field found in multipart body');
+}
 
 function createBot() {
   if (state.bot) {
@@ -296,7 +367,81 @@ const handlers = {
     state.currentAction = null;
     return { stopped: true };
   },
+
+  // ── FAWE / schematic endpoints ─────────────────────────────────────────
+  'GET /fawe_check': async () => {
+    const dir = resolveFaweSchemDir();
+    return {
+      installed: !!dir,         // best-effort: presence of schem dir == FAWE installed
+      schem_dir: dir,
+      schem_dir_writable: dir ? isDirWritable(dir) : false,
+      version: null,            // not introspected; canary in the Skill validates functionality
+    };
+  },
+
+  'GET /fawe_schem_dir': async () => {
+    const dir = resolveFaweSchemDir();
+    return { path: dir };
+  },
+
+  // Filesystem-level schem listing. Bypasses FAWE entirely because FAWE's
+  // `//schem list` output routes to player chat packets and is invisible
+  // to RCON, so an RCON-based query always returns empty. The canary only
+  // needs to know "did build.schem land in the dir FAWE scans" — that's a
+  // filesystem question.
+  //
+  // Limitation: only scans the top-level dir. If FAWE's
+  // per-player-schematics is enabled, files land under `<uuid>/` subdirs;
+  // this endpoint will not see them. /upload_schematic also writes to the
+  // top level, so both paths require per-player-schematics=false.
+  'GET /fawe_schem_list': async () => {
+    const dir = resolveFaweSchemDir();
+    if (!dir) return { names: [], schem_dir: null };
+    let entries;
+    try {
+      entries = fs.readdirSync(dir);
+    } catch (err) {
+      return { names: [], schem_dir: dir, error: err.message };
+    }
+    const names = entries
+      .filter(f => /\.schem(atic)?$/i.test(f))
+      .map(f => f.replace(/\.schem(atic)?$/i, ''));
+    return { names, schem_dir: dir };
+  },
+
+  'POST /validate_block': async ({ block }) => {
+    if (!block) throw new Error('block field required');
+    const bare = String(block).replace(/^minecraft:/, '').replace(/\[[^\]]*\]$/, '');
+    const rec = state.bot?.registry?.blocksByName?.[bare];
+    return { block, valid: !!rec, id: rec?.id ?? null };
+  },
+
+  // Read FAWE's config.yml and report the per-player-schematics flag. When
+  // per-player-schematics=true, FAWE stores/reads schematics under
+  // <schem_dir>/<uuid>/ subdirs; our upload + list endpoints only see the
+  // top-level dir, so that mode silently breaks the full-mode pipeline.
+  // The canary in /kasukabe-pixel Step 5.5 uses this to fail fast.
+  'GET /fawe_per_player_config': async () => {
+    const dir = resolveFaweSchemDir();
+    if (!dir) return { per_player_schematics: null, reason: 'schem dir not found' };
+    // config.yml is the sibling of schematics/: plugins/FastAsyncWorldEdit/config.yml
+    const cfgPath = path.resolve(dir, '..', 'config.yml');
+    let raw;
+    try {
+      raw = fs.readFileSync(cfgPath, 'utf8');
+    } catch (err) {
+      return { per_player_schematics: null, reason: `cannot read ${cfgPath}: ${err.message}` };
+    }
+    // Narrow regex probe — avoid pulling in a full YAML dep for one key.
+    // Matches indented forms like "  per-player-schematics: true".
+    const m = /^[ \t]*per-player-schematics[ \t]*:[ \t]*(true|false)\b/im.exec(raw);
+    if (!m) return { per_player_schematics: false, reason: 'key absent, default false', config_path: cfgPath };
+    return { per_player_schematics: m[1].toLowerCase() === 'true', config_path: cfgPath };
+  },
 };
+
+// NOTE: /upload_schematic is handled directly in the HTTP request dispatch
+// (needs raw Buffer body + multipart parsing, bypassing the handlers dict).
 
 const server = http.createServer((req, res) => {
   if (req.method === 'OPTIONS') {
@@ -305,19 +450,31 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  let body = '';
+  const urlNoQs = req.url.split('?')[0];
+  const isUpload = req.method === 'POST' && urlNoQs === '/upload_schematic';
+  const maxBytes = isUpload ? MAX_UPLOAD_BYTES : MAX_BODY_BYTES;
+
+  // Collect body as Buffer chunks so we can handle both JSON (utf8) and binary (multipart).
+  const chunks = [];
   let bodyBytes = 0;
+  let aborted = false;
   req.on('data', c => {
     bodyBytes += c.length;
-    if (bodyBytes > MAX_BODY_BYTES) {
-      json(res, 413, { success: false, error: 'Request body too large' });
-      req.destroy();
+    if (bodyBytes > maxBytes) {
+      if (!aborted) {
+        aborted = true;
+        json(res, 413, { success: false, error: 'Request body too large' });
+        req.destroy();
+      }
       return;
     }
-    body += c;
+    chunks.push(c);
   });
 
   req.on('end', async () => {
+    if (aborted) return;
+    const bodyBuf = Buffer.concat(chunks);
+    const body = bodyBuf.toString('utf8');
     const url = req.url.split('?')[0];
     const qs = Object.fromEntries(new URLSearchParams(req.url.split('?')[1] || ''));
     const key = `${req.method} ${url}`;
@@ -380,6 +537,45 @@ const server = http.createServer((req, res) => {
       return;
     }
 
+    // POST /upload_schematic — multipart file upload to FAWE schematics dir.
+    // Does NOT require bot connection (the schematic goes to the Paper plugin
+    // directory on disk; FAWE picks it up on next //schem load).
+    if (req.method === 'POST' && url === '/upload_schematic') {
+      try {
+        const dir = resolveFaweSchemDir();
+        if (!dir) {
+          json(res, 500, {
+            success: false,
+            error: 'FAWE schematics directory not found',
+            hint: 'Set KASUKABE_FAWE_SCHEM_DIR env var or ensure ./plugins/FastAsyncWorldEdit/schematics/ exists',
+          });
+          return;
+        }
+        if (!isDirWritable(dir)) {
+          json(res, 500, { success: false, error: `FAWE schem dir not writable: ${dir}` });
+          return;
+        }
+        const ct = req.headers['content-type'] || '';
+        const { filename, data } = parseMultipartSingleFile(bodyBuf, ct);
+        // Safety: strip any path components from the filename
+        const safeName = path.basename(filename).replace(/[^A-Za-z0-9._-]/g, '_');
+        if (!safeName) throw new Error('invalid filename');
+        // Enforce .schem or .schematic extension
+        if (!/\.schem(atic)?$/i.test(safeName)) {
+          throw new Error('filename must end with .schem or .schematic');
+        }
+        const destPath = path.join(dir, safeName);
+        const tmpPath = destPath + '.tmp';
+        fs.writeFileSync(tmpPath, data);
+        fs.renameSync(tmpPath, destPath);
+        json(res, 200, { success: true, path: destPath, bytes: data.length, filename: safeName });
+      } catch (err) {
+        console.error('[bridge] /upload_schematic error:', err.message);
+        json(res, 500, { success: false, error: err.message });
+      }
+      return;
+    }
+
     const handler = handlers[key];
 
     if (!handler) {
@@ -387,7 +583,9 @@ const server = http.createServer((req, res) => {
       return;
     }
 
-    if (key !== 'GET /status' && !requireConnected(res)) return;
+    // Routes that do not require a connected bot
+    const NO_BOT_REQUIRED = new Set(['GET /status', 'GET /fawe_check', 'GET /fawe_schem_dir', 'GET /fawe_schem_list', 'GET /fawe_per_player_config']);
+    if (!NO_BOT_REQUIRED.has(key) && !requireConnected(res)) return;
 
     try {
       const parsed = body ? JSON.parse(body) : {};

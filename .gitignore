@@ -4,6 +4,9 @@
 # Runtime workspace
 workspace/
 
+# Internal research notes
+docs/
+
 # Python
 __pycache__/
 *.py[cod]

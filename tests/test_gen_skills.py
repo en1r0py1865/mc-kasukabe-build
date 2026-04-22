@@ -121,6 +121,49 @@ class TestGenSkills:
         stale = render_skills_for_host(skills_dir, "claude", check=True)
         assert len(stale) == 0
 
+    def test_real_kasukabe_pixel_template_renders(self, tmp_path):
+        """The real kasukabe-pixel template must render for each host without
+        leaving raw placeholders behind."""
+        from scripts.gen_skills import render_skills_for_host
+
+        project_skills = Path(__file__).resolve().parent.parent / "kasukabe" / "skills"
+        tmpl = project_skills / "kasukabe-pixel" / "SKILL.md.tmpl"
+        assert tmpl.is_file()
+
+        for host in ("claude", "codex", "gemini"):
+            render_skills_for_host(project_skills, host)
+            out = project_skills / "_generated" / host / "kasukabe-pixel" / "SKILL.md"
+            assert out.is_file()
+            text = out.read_text()
+            assert "{{" not in text, f"unexpanded placeholder in {host} render"
+            assert "kasukabe-pixel" in text
+            # Step 7 invokes builder which requires --origin and --size.
+            # Regression guard: the rendered skill must pass both flags.
+            assert "kasukabe.agents.builder" in text
+            builder_section = text.split("kasukabe.agents.builder", 1)[1][:400]
+            assert "--origin" in builder_section, \
+                f"Step 7 missing --origin on host {host}"
+            assert "--size" in builder_section, \
+                f"Step 7 missing --size on host {host}"
+            # Step 5.5 canary must use the Python/RCON path, not the
+            # fire-and-forget bridge /command curl. Also confirms the
+            # per-player-schematics probe is wired in (see pitfall family).
+            assert "BridgeClient()" in text and ".schem_list()" in text, \
+                f"kasukabe-pixel canary not migrated to Python/RCON on host {host}"
+            assert "fawe_per_player_config" in text, \
+                f"kasukabe-pixel canary missing per-player-schematics probe on host {host}"
+            # Regression guard: the FAWE Command Semantics pitfalls partial
+            # must be present in every rendered skill — this is what keeps
+            # future agents from re-emitting `//pos1 … //paste` without tp.
+            assert "FAWE / WorldEdit Command Semantics" in text, \
+                f"minecraft_context FAWE pitfalls section missing on host {host}"
+            # Pitfall #6 body guard — header alone is not enough; the
+            # bot-session-continuity text must survive future edits to the
+            # partial because it covers the silent-clipboard-loss failure
+            # mode that looks like paste success to bridge.
+            assert "requires continuous bot session" in text, \
+                f"minecraft_context pitfall #6 body missing on host {host}"
+
     def test_spawn_placeholders_expanded(self, tmp_path):
         """Spawn placeholders are replaced with host-specific content."""
         from scripts.gen_skills import render_skills_for_host

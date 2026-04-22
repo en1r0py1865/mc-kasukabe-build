@@ -104,6 +104,58 @@ setblock x y z minecraft:block
 - No leading slash in vanilla commands
 - Section headers `# VANILLA` and `# WORLDEDIT` control routing
 
+### FAWE / WorldEdit Command Semantics (common pitfalls)
+
+These behaviors have bitten past runs. Read before emitting or debugging WE commands.
+
+1. **`//paste` ALWAYS uses the player's (bot's) current position.**
+   `//pos1 X Y Z` does **not** set the paste target — it only configures the
+   first corner of the player's *selection*, which is consumed by `//set`,
+   `//copy`, `//cut`, `//replace`, not by `//paste`. To paste a schematic at
+   absolute coordinates, teleport the bot first:
+   ```
+   # WORLDEDIT
+   /tp @s <ox> <oy> <oz>
+   //schem load <name>
+   //paste
+   ```
+
+2. **`//paste -a` means "skip air blocks", NOT "absolute".**
+   A common misread. To paste at clipboard-saved origin, the flag is `-o`,
+   and it requires the `.schem` file to carry a non-zero `WEOffsetX/Y/Z`
+   NBT — which `mcschematic` does not write. So `-o` won't rescue a
+   missing teleport.
+
+3. **Bridge `POST /command` is fire-and-forget.**
+   It returns `{executed: "/..."}` the moment `bot.chat` flushes to the
+   socket. FAWE/WorldEdit routes its own output to the player chat
+   packet, not to RCON or to the bridge response — **success on the
+   bridge side does not imply FAWE executed correctly**. If blocks did
+   not appear at the target, do NOT conclude "permission" or "session
+   state" by default; first check whether the bot was teleported to the
+   paste target.
+
+4. **`//schem load` is asynchronous.**
+   FAWE reads the `.schem` off disk on a worker thread. A very fast
+   follow-up `//paste` may arrive before the clipboard is populated and
+   silently fail with "no clipboard". If a large schematic fails but a
+   small one succeeds, raise the inter-command delay or switch to
+   `//schem paste <name>` (single synchronous command).
+
+5. **`//paste` does NOT use or care about `//pos1` / `//pos2`.**
+   Same as (1), stated as a regression-prevention note: if you see a
+   commands.txt emitting `//pos1 … //paste` with no intervening `/tp`,
+   that is the bug — add the `/tp @s`, do not "fix" the coords on `//pos1`.
+
+6. **`//schem load` → `//paste` requires continuous bot session.**
+   FAWE clipboards are in-memory per-player. If the bridge reconnects
+   between load and paste (bot rejoins with a new session), FAWE discards
+   the clipboard and `//paste` silently pastes nothing — bridge still
+   returns `{executed: "/..."}`, but no blocks appear. If a run fails
+   with target-region all-air and `completion_rate=0`, check bridge logs
+   for "player joined" events during the WORLDEDIT section before
+   blaming FAWE config or permissions.
+
 ### Environment
 Connection details are configured via environment variables (see `.env`). Defaults for local development:
 - RCON: `$CRAFTSMEN_RCON_HOST:$CRAFTSMEN_RCON_PORT` (default `127.0.0.1:25575`)

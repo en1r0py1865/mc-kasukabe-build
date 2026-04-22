@@ -24,30 +24,80 @@ from kasukabe.block_palette import FALLBACK_COLOR, get_color
 # ── Rendering ────────────────────────────────────────────────────────────────
 
 
-def render_blueprint(blueprint: dict) -> tuple[Image.Image, list[str]]:
-    """Render blueprint as front-face projection (min-z non-air per x,y).
+def render_blueprint(
+    blueprint: dict, *, axis: str | None = None
+) -> tuple[Image.Image, list[str]]:
+    """Render blueprint to a 2D image, axis-aware.
+
+    The "front face" per axis matches the viewer position that pixel_replica
+    assumes when it places backlight/backdrop extras:
+
+    - axis="xy" (wall, default for kasukabe-build 3D blueprints): viewer at
+      z<0. Project (x, y); the visible block per cell is the one with the
+      SMALLEST z (backdrop/light_block sit at z=+1, behind the mural).
+    - axis="xz" (floor mural, view_face="top"): viewer above at y>0 looking
+      down. Project (x, z); the visible block per cell is the one with the
+      LARGEST y (backdrop/light_block sit at y=-1, below the mural).
+    - axis="yz" (side wall, view_face="side"): viewer at x<0. Project (z, y);
+      the visible block per cell is the one with the SMALLEST x
+      (backdrop/light_block sit at x=+1, behind the mural).
+
+    If `axis` is None, read `blueprint["meta"].get("axis", "xy")`. Legacy 3D
+    blueprints from kasukabe-build have no meta.axis → default "xy" preserves
+    the previous behavior byte-for-byte.
 
     Returns (rendered_image, list_of_unknown_block_ids).
     """
-    size = blueprint["meta"]["size"]
-    w, h = size["x"], size["y"]
+    meta = blueprint["meta"]
+    if axis is None:
+        axis = meta.get("axis", "xy")
+
+    # Prefer actual_footprint (pixel mural dimensions) when present; else size.
+    fp = meta.get("actual_footprint")
+    size = meta.get("size", {})
+    if axis == "xy":
+        w = int(fp["w"]) if fp else int(size.get("x", 0))
+        h = int(fp["h"]) if fp else int(size.get("y", 0))
+        primary = ("x", "y")
+        depth_key = "z"
+        depth_sign = 1   # min-z wins (viewer at -z)
+    elif axis == "xz":
+        w = int(fp["w"]) if fp else int(size.get("x", 0))
+        h = int(fp["h"]) if fp else int(size.get("z", 0))
+        primary = ("x", "z")
+        depth_key = "y"
+        depth_sign = -1  # max-y wins (viewer above at +y, looking down)
+    elif axis == "yz":
+        w = int(fp["w"]) if fp else int(size.get("z", 0))
+        h = int(fp["h"]) if fp else int(size.get("y", 0))
+        primary = ("z", "y")
+        depth_key = "x"
+        depth_sign = 1   # min-x wins (viewer at -x)
+    else:
+        raise ValueError(f"unknown axis {axis!r}; expected xy, xz, or yz")
+
     img = Image.new("RGB", (w, h), (0, 0, 0))
     unknown: set[str] = set()
 
-    # Group by (x, y), pick non-air block with smallest z
+    # Group by (u, v). First block seen per cell wins, and we sort so the
+    # front-facing block is first: ascending depth_sign * depth.
     grid: dict[tuple[int, int], str] = {}
-    for block in sorted(blueprint["blocks"], key=lambda b: b["z"]):
-        pos = (block["x"], block["y"])
+    u_key, v_key = primary
+    for block in sorted(
+        blueprint["blocks"],
+        key=lambda b: depth_sign * b.get(depth_key, 0),
+    ):
+        pos = (int(block[u_key]), int(block[v_key]))
         bid = block["block"]
         if pos not in grid and bid != "minecraft:air":
             grid[pos] = bid
 
-    for (x, y), block_id in grid.items():
+    for (u, v), block_id in grid.items():
         color = get_color(block_id)
         if color == FALLBACK_COLOR:
             unknown.add(block_id)
-        if 0 <= x < w and 0 <= y < h:
-            img.putpixel((x, h - 1 - y), color)  # y-flip: y=0 bottom
+        if 0 <= u < w and 0 <= v < h:
+            img.putpixel((u, h - 1 - v), color)  # v-flip: v=0 at bottom
 
     return img, sorted(unknown)
 

@@ -1,6 +1,8 @@
 """HTTP client for the Mineflayer bridge REST API (localhost:3001)."""
 from __future__ import annotations
 import json
+from pathlib import Path
+
 import requests
 
 BRIDGE_URL = "http://localhost:3001"
@@ -71,3 +73,94 @@ class BridgeClient:
         r.raise_for_status()
         data = r.json()
         return data.get("blocks", [])
+
+    # ── FAWE / schematic endpoints (for /kasukabe-pixel) ────────────────────
+
+    def fawe_check(self) -> dict:
+        """GET /fawe_check — {installed, version, schem_dir_writable, schem_dir}.
+
+        Returns dict with at least those keys. Raises on HTTP error.
+        """
+        r = requests.get(f"{self.base_url}/fawe_check", timeout=DEFAULT_TIMEOUT)
+        r.raise_for_status()
+        return r.json()
+
+    def fawe_per_player_config(self) -> dict:
+        """GET /fawe_per_player_config — reads FAWE's config.yml.
+
+        Returns dict with at least:
+            per_player_schematics: bool | None   (None means bridge couldn't read config.yml)
+            reason: str                          (present when flag is None or defaulted)
+            config_path: str                     (present when file was located)
+
+        Raises requests.HTTPError on transport failure. Callers should treat
+        `per_player_schematics is True` as a hard stop — our upload/list path
+        only sees the top-level schem dir, so per-player mode silently breaks
+        the full-mode pipeline.
+        """
+        r = requests.get(
+            f"{self.base_url}/fawe_per_player_config",
+            timeout=DEFAULT_TIMEOUT,
+        )
+        r.raise_for_status()
+        return r.json()
+
+    def fawe_schem_dir(self) -> str | None:
+        """GET /fawe_schem_dir — absolute path to FAWE schematics dir, or None."""
+        try:
+            r = requests.get(f"{self.base_url}/fawe_schem_dir", timeout=DEFAULT_TIMEOUT)
+            r.raise_for_status()
+            return r.json().get("path")
+        except Exception:
+            return None
+
+    def schem_list(self) -> list[str]:
+        """Return the list of schematic basenames in FAWE's schematics dir.
+
+        Uses the bridge's GET /fawe_schem_list (filesystem listing) rather
+        than running `//schem list` via RCON. FAWE/WorldEdit route command
+        output to the player chat packet, not to RCON's reply stream, so an
+        RCON-based query always returns empty. What the canary actually
+        needs to verify is "did the .schem file land in FAWE's scan
+        directory" — which is a filesystem question.
+        """
+        r = requests.get(f"{self.base_url}/fawe_schem_list", timeout=DEFAULT_TIMEOUT)
+        r.raise_for_status()
+        body = r.json()
+        if "names" not in body:
+            # Bridge predates /fawe_schem_list; fail loudly so the caller
+            # sees "endpoint missing" rather than a silent empty list that
+            # looks like "build.schem not uploaded".
+            raise RuntimeError(
+                "bridge /fawe_schem_list returned no 'names' field — "
+                "bridge may need restart/upgrade"
+            )
+        return list(body["names"])
+
+    def upload_schematic(self, local_path: Path) -> dict:
+        """POST /upload_schematic — multipart upload of a .schem file.
+
+        Server writes the file into the FAWE schematics directory.
+        """
+        local_path = Path(local_path)
+        if not local_path.is_file():
+            raise FileNotFoundError(local_path)
+        with local_path.open("rb") as fh:
+            files = {"file": (local_path.name, fh, "application/octet-stream")}
+            r = requests.post(
+                f"{self.base_url}/upload_schematic",
+                files=files,
+                timeout=60,
+            )
+        r.raise_for_status()
+        return r.json()
+
+    def validate_block(self, block_id: str) -> bool:
+        """POST /validate_block — True if the server recognises the block id."""
+        r = requests.post(
+            f"{self.base_url}/validate_block",
+            json={"block": block_id},
+            timeout=DEFAULT_TIMEOUT,
+        )
+        r.raise_for_status()
+        return bool(r.json().get("valid"))

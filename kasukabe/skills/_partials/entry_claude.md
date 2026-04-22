@@ -6,7 +6,7 @@
 bash setup.sh --host claude
 ```
 
-This renders skill templates and symlinks `/kasukabe-build` and `/kasukabe-extract-frames` into `~/.claude/skills/`.
+This renders skill templates and symlinks `/kasukabe-build`, `/kasukabe-pixel`, and `/kasukabe-extract-frames` into `~/.claude/skills/`.
 
 ### How It Works
 
@@ -24,4 +24,5 @@ In Claude Code:
 
 ```
 /kasukabe-build house.jpg at 100,64,200 size 12x8x10
+/kasukabe-pixel portrait.png at 100,64,200 --size 64x64
 ```

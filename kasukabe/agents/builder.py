@@ -24,6 +24,12 @@ RCON_PORT = int(os.getenv("CRAFTSMEN_RCON_PORT", "25575"))
 
 VANILLA_DELAY = 0.15   # seconds between RCON commands
 BRIDGE_DELAY = 0.10    # seconds between bridge commands
+# Longer delay applied AFTER `//schem load <name>` bridge commands. FAWE reads
+# the .schem off disk on a worker thread; a follow-up `//paste` arriving
+# before the clipboard is populated silently pastes empty (FAWE output is
+# invisible to bridge — see minecraft_context FAWE pitfalls #3, #4). 1.0 s
+# is the empirical safe margin for ~62k-block schems on cold-page reads.
+BRIDGE_SCHEM_LOAD_DELAY = 1.0
 
 # Patterns from minecraft-public-workflow/code/rcon_send.py
 _CHANGED_RE = re.compile(
@@ -33,12 +39,18 @@ _CHANGED_RE = re.compile(
 _ERROR_PATTERNS = [
     re.compile(p, re.IGNORECASE)
     for p in [
-        r"unknown command",
+        r"unknown\s+(?:command|or\s+incomplete)",  # Paper default for unloaded plugin cmd
         r"incorrect argument",
         r"invalid",
         r"not loaded",
         r"out of the world",
         r"command was not found",
+        r"you don'?t have permission",   # generic vanilla op-gate
+        r"failed to load",               # generic
+        # Note: FAWE-specific phrasings ("schematic not found", "you are
+        # not permitted", etc.) are intentionally omitted — FAWE routes
+        # output to the player chat packet, not to RCON's reply stream,
+        # so those phrasings never reach this classifier.
     ]
 ]
 _BENIGN_PATTERNS = [
@@ -96,7 +108,16 @@ class Builder:
     # ── Execution ─────────────────────────────────────────────────────────────
 
     def _run_commands(self, commands: list[tuple[str, str]]) -> dict:
-        """Execute all commands and return a log dict."""
+        """Execute all commands and return a log dict.
+
+        VANILLA commands go through RCON for synchronous command errors.
+        WORLDEDIT commands go through the Mineflayer bridge so `//` chat
+        commands are executed in a real player session.
+
+        FAWE/WE runtime errors remain best-effort here because bridge
+        `/command` is fire-and-forget; callers must rely on post-hoc
+        world-state inspection for build verification.
+        """
         log: dict = {
             "commands_total": len(commands),
             "commands_ok": 0,
@@ -109,15 +130,22 @@ class Builder:
         for channel, cmd in commands:
             try:
                 if channel == "bridge":
-                    self._send_bridge(cmd)
-                    log["commands_ok"] += 1
-                    time.sleep(BRIDGE_DELAY)
+                    resp = self._send_bridge(cmd)
+                    log["bridge_responses"] = log.get("bridge_responses", []) + [resp]
                 else:
                     resp = self._send_rcon(cmd)
                     log["blocks_changed"] += self._count_changed(resp)
-                    log["commands_ok"] += 1
                     log["rcon_responses"] = log.get("rcon_responses", []) + [resp]
-                    time.sleep(VANILLA_DELAY)
+                log["commands_ok"] += 1
+                if channel == "bridge":
+                    delay = (
+                        BRIDGE_SCHEM_LOAD_DELAY
+                        if cmd.startswith("//schem load")
+                        else BRIDGE_DELAY
+                    )
+                else:
+                    delay = VANILLA_DELAY
+                time.sleep(delay)
             except Exception as exc:  # noqa: BLE001
                 log["commands_failed"] += 1
                 log["errors"].append({"command": cmd, "error": str(exc)})

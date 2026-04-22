@@ -10,6 +10,9 @@ requires-python = ">=3.11"
 dependencies = [
     "requests>=2.31",
     "Pillow>=10.0",
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "mcschematic>=11.0",
 ]
 
 [project.optional-dependencies]

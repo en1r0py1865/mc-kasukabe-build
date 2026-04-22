@@ -75,14 +75,14 @@ bash setup.sh --local
 cp .env.example .env
 ```
 
-Edit `.env` with your server settings. Default values work for local development:
+Edit `.env` with your server settings. `CRAFTSMEN_RCON_PASSWORD` MUST be set before first run; all other defaults work for local development:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `KASUKABE_BRIDGE_URL` | `http://localhost:3001` | Mineflayer bridge URL |
 | `CRAFTSMEN_RCON_HOST` | `127.0.0.1` | RCON host |
 | `CRAFTSMEN_RCON_PORT` | `25575` | RCON port |
-| `CRAFTSMEN_RCON_PASSWORD` | `minecraft123` | RCON password (change for non-local servers) |
+| `CRAFTSMEN_RCON_PASSWORD` | `<change-me>` | REQUIRED — must match your server's `rcon.password` in `server.properties` |
 
 ## Usage
 
@@ -123,6 +123,20 @@ The `MC_VERSION` must match your Minecraft server version. If the bridge fails w
 MC_VERSION=1.21.11 node server.js
 ```
 
+**If your Paper server is not co-located with this repo**, the bridge cannot locate the FAWE schematics directory by default (it only probes `./plugins/FastAsyncWorldEdit/schematics/` and its parent, relative to the bridge's working directory). Export an absolute path before launching:
+
+```bash
+export KASUKABE_FAWE_SCHEM_DIR=/path/to/paper-server/plugins/FastAsyncWorldEdit/schematics
+node server.js
+```
+
+Verify:
+
+```bash
+curl -s http://localhost:3001/fawe_check
+# expect installed:true, schem_dir_writable:true
+```
+
 All available environment variables:
 
 | Variable | Default | Description |
@@ -133,6 +147,7 @@ All available environment variables:
 | `MC_BOT_USERNAME` | `ClawBot` | Bot username |
 | `MC_BRIDGE_PORT` | `3001` | Bridge HTTP API port |
 | `MC_AUTH` | `offline` | Auth mode: `offline` or `microsoft` |
+| `KASUKABE_FAWE_SCHEM_DIR` | _auto-detected relative to bridge CWD_ | Absolute path to FAWE's `schematics/` folder. Set this when your Paper server lives outside this repo. |
 
 The bridge connects a Mineflayer bot to the Minecraft server and exposes an HTTP API on port 3001. It handles WorldEdit command execution and block state queries for the Inspector.
 
